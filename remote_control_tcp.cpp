@@ -4,12 +4,12 @@
 
 
 
-boolean RemoteControl::initReceiver(int connection) {
+boolean TCPRemoteControl::initReceiver(int connection) {
   this->Role = RECVR_ROLE;
   this->MessageCount = 0;
   switch (connection) {
     case CXN_TCP: 
-      return RemoteControl::initTCPReceiver();
+      return TCPRemoteControl::initTCPReceiver();
       break;
     case CXN_BLE: 
       return false;
@@ -26,12 +26,12 @@ boolean RemoteControl::initReceiver(int connection) {
 }
 
 
-boolean RemoteControl::initController(int connection) {
+boolean TCPRemoteControl::initController(int connection) {
   this->Role = CNTLR_ROLE;
   this->MessageCount = 0;
   switch (connection) {
     case CXN_TCP: 
-      return RemoteControl::initTCPController();
+      return TCPRemoteControl::initTCPController();
       break;
     case CXN_BLE: 
       return false;
@@ -57,7 +57,7 @@ boolean RemoteControl::initController(int connection) {
  * ============================================================================
 */
 
-boolean RemoteControl::initTCPController() {
+boolean TCPRemoteControl::initTCPController() {
   Serial.begin(DEBUG_SERIAL_BAUD_RATE);
   WiFi.begin(RECVR_SSID, RECVR_PASSWORD);
 
@@ -72,7 +72,7 @@ boolean RemoteControl::initTCPController() {
 }
 
 
-boolean RemoteControl::initTCPReceiver() {
+boolean TCPRemoteControl::initTCPReceiver() {
   boolean config_success = false;
   this->Server = WiFiServer(RECVR_PORT);
   WiFi.mode(WIFI_AP);
@@ -91,7 +91,7 @@ boolean RemoteControl::initTCPReceiver() {
 
 
 
-boolean RemoteControl::checkClientConnections() {
+boolean TCPRemoteControl::checkClientConnections() {
   if (this->Server.hasClient())   {
     if (this->Client.connected())   {
       Serial.println("Connection rejected");
@@ -109,7 +109,7 @@ boolean RemoteControl::checkClientConnections() {
   }
 }
 
-void RemoteControl::sendMessage(String message) {
+void TCPRemoteControl::sendMessage(String message) {
   switch (this->Role)  {
     case RECVR_ROLE:
       if (this->Client) {
@@ -130,7 +130,7 @@ void RemoteControl::sendMessage(String message) {
 }
 
 
-void RemoteControl::recvMessage() {
+void TCPRemoteControl::recvMessage() {
   switch (this->Role)  {
     case RECVR_ROLE:
       if (this->Client.connected() && this->Client.available()) {

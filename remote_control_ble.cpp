@@ -57,7 +57,7 @@ class ScanAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 */
 
 // RemoteControl constructor
-RemoteControl::RemoteControl() {
+BLERemoteControl::BLERemoteControl() {
   //doConnect = false;
 
 
@@ -69,7 +69,7 @@ RemoteControl::RemoteControl() {
 
 
 
-bool RemoteControl::connectToServer(BLEAddress pAddress) {
+bool BLERemoteControl::connectToServer(BLEAddress pAddress) {
   Serial.print("Forming a connection to ");
   Serial.println(pAddress.toString().c_str());
 
@@ -93,14 +93,14 @@ bool RemoteControl::connectToServer(BLEAddress pAddress) {
   pRemoteCharacteristic->registerForNotify(notifyCallback);
 }
 
-bool RemoteControl::initReceiver(int connection) {
+bool BLERemoteControl::initReceiver() {
   this->Role = CNTLR_ROLE;
-  return RemoteControl::initBLEReceiver();
+  return BLERemoteControl::initBLEReceiver();
 }
 
-bool RemoteControl::initController(int connection) {
+bool BLERemoteControl::initController() {
   this->Role = RECVR_ROLE;
-  return RemoteControl::initBLEController();
+  return BLERemoteControl::initBLEController();
   
 }
 
@@ -112,7 +112,7 @@ bool RemoteControl::initController(int connection) {
 
   ================================================================ 
 */
-bool RemoteControl::initBLEReceiver() {  
+bool BLERemoteControl::initBLEReceiver() {  
   Serial.begin(115200);
   BLEDevice::init(DEVICE_NAME);
   BLEScan* pBLEScan = BLEDevice::getScan();
@@ -136,7 +136,7 @@ bool RemoteControl::initBLEReceiver() {
 
 
 
-bool RemoteControl::initBLEController() {
+bool BLERemoteControl::initBLEController() {
   Serial.begin(DEBUG_SERIAL_BAUD_RATE);
   BLEDevice::init(DEVICE_NAME);
   BLEServer *pServer = BLEDevice::createServer();
@@ -176,7 +176,7 @@ bool RemoteControl::initBLEController() {
 /* Send Messages */
 
 
-void RemoteControl::sendMessage(String message) {
+void BLERemoteControl::sendMessage(String message) {
   char ble_message[120];
   if (connected) {
       message.toCharArray(ble_message, MSG_SIZE);
@@ -193,7 +193,7 @@ void RemoteControl::sendMessage(String message) {
 /* Receive Messages */
 
 
-void RemoteControl::recvMessage() {
+void BLERemoteControl::recvMessage() {
   if (connected) {
     std::string value = pRemoteCharacteristic->readValue();
     Serial.println(  value.c_str() );

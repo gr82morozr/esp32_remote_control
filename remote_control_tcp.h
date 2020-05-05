@@ -47,7 +47,7 @@
 
 
 
-class RemoteControl {
+class TCPRemoteControl {
   public:
     int Role;
     long MessageCount;

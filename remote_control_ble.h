@@ -49,9 +49,9 @@
 
 
 
-class RemoteControl {
+class BLERemoteControl {
   public:
-    RemoteControl();
+    BLERemoteControl();
     int Role;
 
     BLECharacteristic *pCharacteristic;
@@ -59,8 +59,8 @@ class RemoteControl {
 
     bool connectToServer(BLEAddress pAddress);
     char ReceivedMessage[MSG_SIZE];
-    bool initController(int connection);
-    bool initReceiver(int connection);
+    bool initController();
+    bool initReceiver();
     bool initBLEController();
     bool initBLEReceiver();
     void sendMessage(String message);
