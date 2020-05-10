@@ -2,82 +2,114 @@
 #include "remote_control_espnow.h"
 
 
+// Declare all static varibles
+int ESPNOWRemoteControl::role;
+int ESPNOWRemoteControl::peer_status;
+uint8_t ESPNOWRemoteControl::message_recv[MESSAGE_SIZE];
+esp_now_peer_info_t ESPNOWRemoteControl::peer;
+  
 
-
-
-
-
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  char macStr[18];
-  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
-           mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
-  Serial.print("Last Packet Sent to: "); Serial.println(macStr);
-  Serial.print("Last Packet Send Status: "); Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
-}
-
-void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
-  char macStr[18];
-  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
-           mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
-  Serial.print("Last Packet Recv from: "); Serial.println(macStr);
-  Serial.print("Last Packet Recv Data: "); Serial.println(*data);
-  Serial.println("");
-}
-
-ESPNOWRemoteControl::ESPNOWRemoteControl(int role) {
-  Serial.begin(DEBUG_SERIAL_BAUD_RATE);
-
-  this->role = role;
-  this->receiver_status = RCVR_NOT_FOUND;
-  Serial.println("RC Role: " + String(this->role));
+/*
+ * =================================================================
+ * Contructor
+ *  - Controllor  
+ *  - Receiver
+ * =================================================================
+*/
+ESPNOWRemoteControl::ESPNOWRemoteControl(int r) {
+  Serial.begin(SERIAL_BAUD_RATE);
+  role = r;
+  memset(ESPNOWRemoteControl::peer.peer_addr, 0, 6);
+  println("This Device RC Role = " + String(role) );
 }
 
 
-
-
+/*
+ * =================================================================
+ * Init Controller and Receiver 
+ *   
+ * =================================================================
+*/
 void ESPNOWRemoteControl::init(void) {
-  this->init_ESPNow();
-
-
+  this->init_network();
+  peer_status = PEER_NOT_FOUND;
 }
 
-
+/*
+ * =================================================================
+ * Detect Network Connection Status
+ *  If error detected, needs to re-connect 
+ * =================================================================
+*/
 bool ESPNOWRemoteControl::check_connection(void) {
-  while (this->receiver_status != RCVR_PAIRED) {
-    Serial.println("Checking... (status=" + String(receiver_status) + ")" );
-    switch (this->receiver_status) {
-      case RCVR_NOT_FOUND:
-        this->scan_Receivers();
-        break;
-      case RCVR_FOUND:
-        this->pair_Receiver();
-        break;
-      case RCVR_PAIRED:
-        break;
-      default:
-        this->receiver_status = RCVR_NOT_FOUND;
-        break;
-    };
-  };
-  return this->receiver_status;  
-}
+  int retry = 0;
+  switch (role) {
+    // ===== For Controller =====
+    case RC_CONTROLLER : 
+      while (peer_status != PEER_PAIRED && retry <=3) {
+        println("Controller : Checking... (peer_status=" + String(peer_status) + ")" );
+        retry ++;
+        switch (peer_status) {
+          case PEER_NOT_FOUND:
+            this->scan_network(); // look for receiver, if found, set the peer object
+            break;
+          case PEER_FOUND:
+            this->pair_peer();
+            break;
+          case PEER_PAIRED:
+            break;
+          case PEER_ERROR:
+            peer_status = PEER_NOT_FOUND; // retry from scan_network.
+            break;
+          default:
+            peer_status = PEER_NOT_FOUND; // retry from scan_network.
+            break;
+        };
+      };
+      println("Controller : Checked (peer_status=" + String(peer_status) + ") after retry=" + String(retry) );
+      break;
 
+
+    // ====== For receiver =====
+    case RC_RECEIVER:
+      switch (peer_status) {
+        case PEER_NOT_FOUND:
+          println("Peer Mac has not been set, waiting for the 1st message coming ....");
+          // do nothing , just wait...
+          break;
+        case PEER_FOUND:
+          println("Peer Mac has been set, but not paired");
+          this->pair_peer(); 
+          break;
+        case PEER_PAIRED:
+          println("Already paired successfully.");
+          break;
+        case PEER_ERROR:    
+          peer_status = PEER_NOT_FOUND; // retry from re-connect
+          break;
+        default:
+          peer_status = PEER_NOT_FOUND; // retry from re-connect
+          break;
+      }
+  }
+  return (peer_status==PEER_PAIRED); 
+}
 
 
 // Init ESP Now with fallback
-void ESPNOWRemoteControl::init_ESPNow() {
-
-  switch (this->role) {
+void ESPNOWRemoteControl::init_network() {
+  switch (role) {
     case RC_CONTROLLER:
+      /* Master connects to Receiver  */
       WiFi.mode(WIFI_STA);
       break;
     case RC_RECEIVER:
+      /* Receiver hosts an WIFI network as AP */
       WiFi.mode(WIFI_AP);
-      this->config_DeviceAP();
-
+      this->config_ap();
       break;
     default:
-      Serial.println("Error: No Role is defined.");
+      println("Error: No Role is defined.");
       delay(1000);
       ESP.restart();
       break;
@@ -86,95 +118,105 @@ void ESPNOWRemoteControl::init_ESPNow() {
   WiFi.disconnect();
 
   if (esp_now_init() == ESP_OK) {
-    Serial.println("ESPNow Init Success");
+    println("ESPNow Init Success.");
   } else {
-    Serial.println("ESPNow Init Failed");
+    println("ESPNow Init Failed, wait for 1s and restart.");
     delay(1000);
     ESP.restart();
   }
-  
-  
-  esp_now_register_send_cb(OnDataSent);
-  esp_now_register_recv_cb(OnDataRecv);
-  
+
+  esp_now_register_send_cb(ESPNOWRemoteControl::on_datasent);
+  esp_now_register_recv_cb(ESPNOWRemoteControl::on_datarecv);
 
 }
 
 
-void ESPNOWRemoteControl::config_DeviceAP(void) {
+void ESPNOWRemoteControl::config_ap(void) {
   bool result = WiFi.softAP(WIFI_SSID, WIFI_PASSWORD, ESPNOW_CHANNEL, 0);
   if (!result) {
-    Serial.println("AP Config failed.");
+    println("AP Config failed.");
   } else {
-    Serial.println("AP Config Success. Broadcasting with AP: " + String(WIFI_SSID));
+    println("AP Config Success. Broadcasting with AP: " + String(WIFI_SSID));
+    println(WiFi.macAddress());
   }
 }
 
 
-void ESPNOWRemoteControl::scan_Receivers() {
+void ESPNOWRemoteControl::scan_network() {
+/* 
+ * ================================================================== 
+ *  Only invoked from Controller (Master)
+ *  to scan for the possible receivers
+ * 
+ * 
+ * 
+ * 
+ * ==================================================================
+ */
+   
   int8_t scanResults = WiFi.scanNetworks();
-  this->receiver_status = RCVR_NOT_FOUND;
-  memset(&this->receiver, 0, sizeof(this->receiver));
+  peer_status = PEER_NOT_FOUND;
+  memset(&peer, 0, sizeof(peer));
   if (scanResults > 0) {
-    Serial.println("Found " + String(scanResults) + " devices ");
-
+    println("Found " + String(scanResults) + " devices.");
     for (int i = 0; i < scanResults; ++i) {
       // Print SSID and RSSI for each device found
       String SSID = WiFi.SSID(i);
       int32_t RSSI = WiFi.RSSI(i);
       String BSSIDstr = WiFi.BSSIDstr(i);
-
-      if (DEBUG) {
-        Serial.print(i + 1);
-        Serial.print(": ");
-        Serial.print(SSID);
-        Serial.print(" (");
-        Serial.print(RSSI);
-        Serial.print(")");
-        Serial.println("");
-      }
       delay(10);
-      // Check if the current device starts with `Slave`
+      // Check if the current device matches
       if (SSID.indexOf(WIFI_SSID) == 0) {
-        Serial.print("Found a receiver:");
-        Serial.print(i + 1); Serial.print(": "); Serial.print(SSID); Serial.print(" ["); Serial.print(BSSIDstr); Serial.print("]"); Serial.print(" ("); Serial.print(RSSI); Serial.print(")"); Serial.println("");
-        // Get BSSID => Mac Address of the Receiver
-        int mac[6];
-        if ( 6 == sscanf(BSSIDstr.c_str(), "%x:%x:%x:%x:%x:%x",  &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5] ) ) {
-          for (int ii = 0; ii < 6; ++ii ) {
-            this->receiver.peer_addr[ii] = (uint8_t) mac[ii];
-          }
-        }
-
-        this->receiver.channel = ESPNOW_CHANNEL; // pick a channel
-        this->receiver.encrypt = 0; // no encryption
-        this->receiver_status = RCVR_FOUND;
+        if ( 6 == sscanf(BSSIDstr.c_str(), "%x:%x:%x:%x:%x:%x",  &peer.peer_addr[0], &peer.peer_addr[1], &peer.peer_addr[2], &peer.peer_addr[3], &peer.peer_addr[4], &peer.peer_addr[5] ) ) {
+          peer_status = PEER_FOUND;
+        }          
         break;
       }
     }
   } else {
-    Serial.println("No WiFi devices in AP Mode found");
-    delay(1000);
-    ESP.restart();
+    println("Error : No receiver found");
+    peer_status = PEER_NOT_FOUND;
+    //delay(1000);
+    //ESP.restart();
   }
   
   // clean up ram
   WiFi.scanDelete();
 }
 
-void ESPNOWRemoteControl::pair_Receiver() {
-  this->receiver_status = esp_now_is_peer_exist(this->receiver.peer_addr);
 
-  if ( this->receiver_status != RCVR_PAIRED) {
-    esp_err_t pair_Status = esp_now_add_peer(&this->receiver);
-    switch (pair_Status) {
+
+/* 
+ * ========================================================
+ * Pairing ESP Now Controller and Receiver
+ * 
+ * 
+ * ========================================================
+ */
+void ESPNOWRemoteControl::pair_peer() {
+  if ( ! esp_now_is_peer_exist(peer.peer_addr) || peer_status != PEER_PAIRED ) { // if not exists
+    
+    //clean existing pairing
+    if (esp_now_del_peer(peer.peer_addr) == ESP_OK ) {
+		  println("Pair cleaned - Success");
+    }
+
+    // prepare for pairing - RC receiver needs to set ifidx
+    peer.channel = ESPNOW_CHANNEL;  // pick a channel
+    peer.encrypt = 0;               // no encryption
+    if (role ==RC_RECEIVER ) { 
+      peer.ifidx = ESP_IF_WIFI_AP;
+    }
+
+    // do pairing
+    switch (esp_now_add_peer(&peer)) {
       case ESP_OK :
-        Serial.println("Pair Receiver Success.");
-        this->receiver_status = RCVR_PAIRED;
+        println("Paired Success.");
+        peer_status = PEER_PAIRED;
         break;
       default:
-        Serial.println("Pair Receiver Failed - " + String());
-        this->receiver_status = RCVR_NOT_FOUND;
+        println("Paird Failed - " + String());
+        peer_status = PEER_NOT_FOUND;
         break;
     }
   } 
@@ -182,26 +224,69 @@ void ESPNOWRemoteControl::pair_Receiver() {
 
 
 
-void ESPNOWRemoteControl::send_data() {
-  uint8_t data = millis();
-  const uint8_t *peer_addr = this->receiver.peer_addr;
-  Serial.print("Sending: "); Serial.println(data);
-  esp_err_t result = esp_now_send(peer_addr, &data, sizeof(data));
-  Serial.print("Send Status: ");
+void ESPNOWRemoteControl::send_data(uint8_t *message) {
+  esp_err_t result;
+  result = esp_now_send(peer.peer_addr, message, MESSAGE_SIZE);
   if (result == ESP_OK) {
-    Serial.println("Success");
-  } else if (result == ESP_ERR_ESPNOW_NOT_INIT) {
-    // How did we get so far!!
-    Serial.println("ESPNOW not Init.");
-  } else if (result == ESP_ERR_ESPNOW_ARG) {
-    Serial.println("Invalid Argument");
-  } else if (result == ESP_ERR_ESPNOW_INTERNAL) {
-    Serial.println("Internal Error");
-  } else if (result == ESP_ERR_ESPNOW_NO_MEM) {
-    Serial.println("ESP_ERR_ESPNOW_NO_MEM");
-  } else if (result == ESP_ERR_ESPNOW_NOT_FOUND) {
-    Serial.println("Peer not found.");
+    println("Sending success.");
   } else {
-    Serial.println("Not sure what happened");
+    peer_status = PEER_ERROR;
+    println("Cannot send data.");
   }
+}
+
+String ESPNOWRemoteControl::recv_data() {
+  String str = (char*)message_recv;
+  return str;
+}
+
+
+void ESPNOWRemoteControl::on_datasent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  println("Last Packet Sent to: " + mac2str(mac_addr));
+  println("Last Packet Send Status: " + String(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail"));
+  if (status != ESP_NOW_SEND_SUCCESS) {
+    peer_status = PEER_ERROR;
+    println("Error of sending data. (ack)");
+  }
+
+}
+
+void ESPNOWRemoteControl::on_datarecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+  if (!is_mac_set(peer.peer_addr) || peer_status == PEER_NOT_FOUND ) {
+    memcpy( &peer.peer_addr, mac_addr, 6 );
+    peer_status = PEER_FOUND;
+  };
+  println(mac2str(peer.peer_addr));
+  println("Last Packet Recv from: " + mac2str(peer.peer_addr));
+  println("Last Packet Recv Data Length: " + String(data_len));
+  memcpy(message_recv,data,data_len);
+}
+
+
+/* 
+ * ========================================================
+ *   Common Utility Functions
+ *   
+ * 
+ * 
+ * ==========================================================
+ */
+void ESPNOWRemoteControl::println(String message) {
+  if (DEBUG) {
+    Serial.println("debug: " + message);
+  }
+}
+
+String ESPNOWRemoteControl::mac2str(const uint8_t *mac_addr) {
+  char mac_str[18];
+  snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+  return mac_str;
+}
+
+
+bool ESPNOWRemoteControl::is_mac_set(const uint8_t *mac_addr) {
+  // Check the MAC has been set
+  int n = 6;
+  while(--n>0 && mac_addr[n]==mac_addr[0]);
+    return n!=0;
 }
