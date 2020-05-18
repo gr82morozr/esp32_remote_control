@@ -1,7 +1,6 @@
 #include <Arduino.h>
 
 
-
 /* 
  * ========================================================================
  * ESPNow Two Way Comminication Remote Controller/Receiver Libary
@@ -13,8 +12,9 @@
  * Receiver   -> ESPNOW Slave 
  *  
  * Notes:  
- *  - Allows two way communications between Controller and Receiver
- *    So it doesn't really matter which ESP32 is Controller or Receover   
+ *  - Allows two-way communications between Controller and Receiver
+ *    So it doesn't really matter which ESP32 is Controller or Receover
+ *    
  * 
  * Steps:
  *  - Receiver hosts an WIFI network.
@@ -27,7 +27,7 @@
  * Exception Handling -
  *  - During handshake, it ensures the peers are ready to cend & receive.
  *    in case of exception detected in handshake, it went to loop of retry.
- *  - During real communication, 
+ *  - During real communication, if error detected, will reconnect
  * ============================================================
 */ 
 
@@ -44,11 +44,11 @@
 #define MAX_MSG_SIZE        200
 
 
-#define DEBUG               1
+#define DEBUG               0
 #define SERIAL_BAUD_RATE    115200
 
 
-// ESPNOWSpecific marcos
+// ESPNOW Specific marcos
 #define ESPNOW_CHANNEL      1
 #define WIFI_SSID           "ESP32-RC-WLAN"
 #define WIFI_PASSWORD       "vdjfiend#d0%d"
@@ -69,10 +69,8 @@
 class ESPNOWRemoteControl {
   public:
     ESPNOWRemoteControl(int role);
-    void init(void);
-    bool check_connection(void);
-
-    //static void send_data(uint8_t *data);
+    static void init(void);
+    static bool check_connection(void);
     static void send_data(String data);
     static String recv_data();
 
@@ -91,20 +89,12 @@ class ESPNOWRemoteControl {
     static void config_ap();
     static void scan_network();
     static void pair_peer();
-    static void println(String message);
+    static void debug(String message);
     static String mac2str(const uint8_t *mac_addr);
     static bool is_mac_set(const uint8_t *mac_addr);
     static void on_datasent(const uint8_t *mac_addr, esp_now_send_status_t status) ;
     static void on_datarecv(const uint8_t *mac_addr, const uint8_t *data, int data_len);
     static void do_handshake();
 };
-
-
-
-
-
-
-
-
 
 #endif
