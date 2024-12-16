@@ -79,7 +79,7 @@ void ESP32RemoteControl::handle_exception(void) {
     Serial.println(exception_message); 
     digitalWrite(BUILTIN_LED, HIGH);
     while (true) {
-      _DELAY(1000);
+      _DELAY_(1000);
     }
   } else {
     custom_handler();

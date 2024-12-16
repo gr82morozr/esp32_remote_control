@@ -2,11 +2,9 @@
 
 ESP32_RC_WIFI* ESP32_RC_WIFI::instance = nullptr;
 
-
-ESP32_RC_WIFI::ESP32_RC_WIFI(bool fast_mode, bool debug_mode)
-    : ESP32RemoteControl(fast_mode, debug_mode), server(ESP32_RC_TCP_PORT) {
-
-  ESP32_RC_WIFI::instance = this;
+ESP32_RC_WIFI::ESP32_RC_WIFI(bool fast_mode, bool debug_mode) : ESP32RemoteControl(fast_mode, debug_mode) {
+  server = WiFiServer(ESP32_RC_TCP_PORT);
+  instance = this;
 }
 
 // Initialize WiFi configuration
@@ -25,42 +23,121 @@ void ESP32_RC_WIFI::init(void) {
   // Create the mutex
   mutex = xSemaphoreCreateMutex();
 
-  // Create Timer
+  // Create Timer Tasks
   // For example : _ESP32_RC_DATA_RATE = 100 (times/sec)
   //              => int(1000/_ESP32_RC_DATA_RATE) = 10 (ms),  delay 10ms for each timer event
-  send_timer = xTimerCreate("Timer", pdMS_TO_TICKS( int(1000/_ESP32_RC_DATA_RATE) ), pdTRUE, (void*)0, send_timer_callback);
-  
-  // heartbeat_timer triggers every 1 sec
-  heartbeat_timer = xTimerCreate("Timer", pdMS_TO_TICKS( int(1000/ESP32_RC_HEARTBEAT_RATE) ), pdTRUE, (void*)0, heartbeat_timer_callback);
+  send_timer      = xTimerCreate("SendTimer",       pdMS_TO_TICKS(int(1000/_ESP32_RC_DATA_RATE)),       pdTRUE, nullptr, send_timer_callback);
+  recv_timer      = xTimerCreate("RecvTimer",       pdMS_TO_TICKS(int(1000/_ESP32_RC_DATA_RATE)),       pdTRUE, nullptr, recv_callback);
+  heartbeat_timer = xTimerCreate("HeartBeatTimer",  pdMS_TO_TICKS( int(1000/ESP32_RC_HEARTBEAT_RATE) ), pdTRUE, nullptr, heartbeat_timer_callback);
 
-  if (send_timer == NULL || heartbeat_timer == NULL) {
+  if (send_timer == NULL || heartbeat_timer == NULL || recv_timer == NULL) {
     _ERROR_("Failed to create timer");
   }  
+
+  xTimerStart(recv_timer, 0);
 }
 
-void ESP32_RC_WIFI::connect(void) {
+
+/* 
+ * ========================================================
+ * Handshake two peers
+ *  - Needs to be done before pairing 
+ *  - it should block send/send_queue_msg 
+ * ========================================================
+ */
+bool ESP32_RC_WIFI::handshake() {
   _DEBUG_("Setting up private WiFi...");
+  
+  // Lock the varible
+  set_value(&connection_status, _STATUS_CONN_IN_PROG);
+
 
   // Try connecting as STA
   WiFi.begin(ESP32_RC_SSID, ESP32_RC_PASSWORD);
   int retry = 10;  // Retry limit
   while (WiFi.status() != WL_CONNECTED && retry > 0) {
-    _DELAY(1000);
+    _DELAY_(1000);
     _DEBUG_("Retrying STA mode...");
     retry--;
   }
 
+  // Connected as STA
   if (WiFi.status() == WL_CONNECTED) {
     _DEBUG_("Connected to AP as STA.");
     is_ap = false;
+
+    // Step 1: Establish a persistent TCP connection to the AP
+    if (!client.connect(ESP32_RC_SSID, ESP32_RC_TCP_PORT)) {
+      _DEBUG_("Failed to establish TCP connection to AP.");
+      return false;
+    }
+      
+    // Step 2: Send handshake message to AP
+    op_send(create_sys_msg(_HANDSHAKE_MSG));
+
+    // Step 3: Wait for handshake ack
+    retry = 10;
+
+
   } else {
+
+
+    // STA is not avaliable
     // Fall back to AP mode
     _DEBUG_("Switching to AP mode...");
     WiFi.softAP(ESP32_RC_SSID, ESP32_RC_PASSWORD);
     server.begin();
     is_ap = true;
     _DEBUG_("AP mode active.");
+
+    // Step 1: Wait for handshake message from STA
+    while (true) {  // wait forever
+      WiFiClient _client = server.available();
+      if (client) {
+
+
+      }
+    }
+
   }
+
+
+
+
+
+
+  _DEBUG_("Failed.");
+  return false;
+}
+
+bool ESP32_RC_WIFI::op_send(Message msg) {
+  set_value(&send_status, _STATUS_SEND_IN_PROG);
+  client.write((const uint8_t*)&msg, sizeof(msg));
+  client.flush(); // Ensure all data is sent
+}
+
+
+
+void ESP32_RC_WIFI::connect(void) {
+  _DEBUG_ ("Started.");
+  int attempt = 0;
+  int max_retry = 100;
+  while (attempt <= max_retry) {
+    attempt++;
+    if (handshake() == true) break;
+    _DELAY_(10);
+    if (attempt >= max_retry ) {
+      _ERROR_ ("Failed. Attempts >= Max Retry (" + String(max_retry) + ")");
+    }  
+  }
+
+  // start processing the send message queue.
+  set_value(&send_status, _STATUS_SEND_READY);
+  
+  xTimerStart(send_timer, 0);
+  xTimerStart(heartbeat_timer, 0);
+  _DEBUG_("Success.");
+
 }
 
 void ESP32_RC_WIFI::send(Message data) {
@@ -119,7 +196,10 @@ ESP32_RC_WIFI::~ESP32_RC_WIFI() {
   }
 };
 
+void ESP32_RC_WIFI::send_queue_msg() {
 
+
+}
 
 
 void ESP32_RC_WIFI::send_timer_callback(TimerHandle_t xTimer) {
@@ -127,11 +207,10 @@ void ESP32_RC_WIFI::send_timer_callback(TimerHandle_t xTimer) {
   instance->send_queue_msg();
 }
 
-void ESP32_RC_WIFI::send_queue_msg() {
 
-
+void ESP32_RC_WIFI::recv_callback(TimerHandle_t xTimer) {
+  
 }
-
 
 void ESP32_RC_WIFI::heartbeat_timer_callback(TimerHandle_t xTimer) {
   instance->send_queue_msg();
@@ -149,6 +228,6 @@ void ESP32_RC_WIFI::run(void* data) {
   // Example: Add your task logic here
   while (true) {
     _DEBUG_("Running WiFi task...");
-    _DELAY(1000);  // Simulate some work
+    _DELAY_(1000);  // Simulate some work
   }
 }

@@ -41,7 +41,7 @@ void loop() {
   send_data.a1 = millis();
   rc_controller.send(send_data);
   recv_data = rc_controller.recv();
-  _DELAY(10);
+  _DELAY_(10);
   if (count % cycle_count == 0) {
     unsigned long time_taken = millis() - start_time;
     Serial.println(String(count) + " : " + String((float)int(time_taken/cycle_count*100)/100) + " : " + String(recv_data.msg1) + " : " + String(recv_data.a1) );

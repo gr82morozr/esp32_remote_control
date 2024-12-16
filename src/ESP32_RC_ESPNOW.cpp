@@ -53,7 +53,7 @@ void ESP32_RC_ESPNOW::init(void)  {
   while (attempt <= max_retry) {
     attempt++;
     if (esp_now_init() == ESP_OK)  break;
-    vTaskDelay(pdMS_TO_TICKS(10)); 
+    _DELAY_(10);
     if (attempt >= max_retry ) {
       _ERROR_ ("Failed. Attempts >= Max Retry (" + String(max_retry) + ")");
     }  
@@ -69,13 +69,11 @@ void ESP32_RC_ESPNOW::init(void)  {
   // Create the mutex
   mutex = xSemaphoreCreateMutex();
 
-  // Create Timer
+  // Create Timer Tasks
   // For example : _ESP32_RC_DATA_RATE = 100 (times/sec)
   //              => int(1000/_ESP32_RC_DATA_RATE) = 10 (ms),  delay 10ms for each timer event
-  send_timer = xTimerCreate("Timer", pdMS_TO_TICKS( int(1000/_ESP32_RC_DATA_RATE) ), pdTRUE, (void*)0, send_timer_callback);
-  
-  // heartbeat_timer triggers every 1 sec
-  heartbeat_timer = xTimerCreate("Timer", pdMS_TO_TICKS( int(1000/ESP32_RC_HEARTBEAT_RATE) ), pdTRUE, (void*)0, heartbeat_timer_callback);
+  send_timer      = xTimerCreate("SendTimer",       pdMS_TO_TICKS(int(1000/_ESP32_RC_DATA_RATE)),     pdTRUE, nullptr, send_timer_callback);
+  heartbeat_timer = xTimerCreate("HeartBeatTimer",  pdMS_TO_TICKS(int(1000/ESP32_RC_HEARTBEAT_RATE)), pdTRUE, nullptr, heartbeat_timer_callback);
 
   if (send_timer == NULL || heartbeat_timer == NULL) {
     _ERROR_("Failed to create timer");
@@ -101,7 +99,7 @@ void ESP32_RC_ESPNOW::connect(void) {
   while (attempt <= max_retry) {
     attempt++;
     if (handshake() == true) break;
-    vTaskDelay(pdMS_TO_TICKS(10)); 
+    _DELAY_(10);
     if (attempt >= max_retry ) {
       _ERROR_ ("Failed. Attempts >= Max Retry (" + String(max_retry) + ")");
     }  
@@ -165,7 +163,7 @@ void ESP32_RC_ESPNOW::send(Message data) {
   int status = 0;
   get_value(&connection_status, &status);
   if (fast_mode) {
-    if (status != _STATUS_HSHK_OK) { return; }
+    if (status != _STATUS_CONN_OK) { return; }
     if (get_queue_depth(send_queue) >= _RC_QUEUE_DEPTH ) {
       Message msg;
       de_queue(send_queue, &msg);
@@ -177,7 +175,7 @@ void ESP32_RC_ESPNOW::send(Message data) {
   } else {
     while (true) {
       // make sure handshake is completed successfully, then perform send
-      if( get_queue_depth(send_queue) < _RC_QUEUE_DEPTH && status == _STATUS_HSHK_OK ) {
+      if( get_queue_depth(send_queue) < _RC_QUEUE_DEPTH && status == _STATUS_CONN_OK ) {
         //msg = create_sys_msg(data);
         en_queue(send_queue, &data);
         send_metric.in_count ++;
@@ -207,7 +205,7 @@ void ESP32_RC_ESPNOW::send_queue_msg() {
   // if send_queue empty, then done
   // only wait for new messages while when the queue is empty.
   if (get_queue_depth(send_queue) == 0 ) {
-    _DELAY(int( 1000/_ESP32_RC_DATA_RATE/2 ));
+    _DELAY_(int( 1000/_ESP32_RC_DATA_RATE/2 ));
     return;
   }
 
@@ -245,7 +243,7 @@ void ESP32_RC_ESPNOW::send_queue_msg() {
         send_metric.err_count ++;
         break; // exit the loop and try again.
       }
-      _DELAY(2);   // wait for a while
+      _DELAY_(2);   // wait for a while
     }
   }
   
@@ -300,7 +298,7 @@ bool ESP32_RC_ESPNOW::handshake() {
   _DEBUG_("Started.");
   
   // Lock the varible
-  set_value(&connection_status, _STATUS_HSHK_IN_PROG);
+  set_value(&connection_status, _STATUS_CONN_IN_PROG);
 
   unsigned long start_time = millis();
 
@@ -309,18 +307,16 @@ bool ESP32_RC_ESPNOW::handshake() {
   op_send(create_sys_msg(_HANDSHAKE_MSG));
   unpair_peer(broadcast_addr);
 
-  
-
   // Wait Ack 
   int status = 0;
   while (millis() - start_time < 10000) {   
     // read handshake
     get_value(&connection_status, &status);
-    if (status == _STATUS_HSHK_OK) {
+    if (status == _STATUS_CONN_OK) {
       _DEBUG_("Success.");
       return true;
     }
-    _DELAY(10);
+    _DELAY_(10);
   }
   _DEBUG_("Failed.");
   return false;
@@ -372,11 +368,11 @@ void ESP32_RC_ESPNOW::on_datarecv(const uint8_t *mac_addr, const uint8_t *data, 
   // check if handshake in progress, and process Ack
   get_value(&connection_status, &status);
   //_DEBUG_( String(status));
-  if (strcmp(msg.sys, _HANDSHAKE_ACK_MSG) == 0 && status == _STATUS_HSHK_IN_PROG) {
+  if (strcmp(msg.sys, _HANDSHAKE_ACK_MSG) == 0 && status == _STATUS_CONN_IN_PROG) {
     pair_peer(mac_addr);
     empty_queue(send_queue);
     empty_queue(recv_queue);
-    set_value(&connection_status, _STATUS_HSHK_OK);
+    set_value(&connection_status, _STATUS_CONN_OK);
     return;
   }
 
@@ -393,7 +389,7 @@ void ESP32_RC_ESPNOW::on_datarecv(const uint8_t *mac_addr, const uint8_t *data, 
   }
 
   // regular message
-  if (status == _STATUS_HSHK_OK) {
+  if (status == _STATUS_CONN_OK) {
     recv_metric.in_count ++;
     // add protection to de-queue front message to avoid queue overflow failure.
     while (get_queue_depth(recv_queue) >= _RC_QUEUE_DEPTH )  { 
