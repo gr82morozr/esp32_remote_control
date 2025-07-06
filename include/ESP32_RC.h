@@ -1,104 +1,96 @@
 #pragma once
+
 #include <Arduino.h>
-#include <ESP32_RC_Common.h>
-#include <Task.h>
+#include "config.h"
+
+#include <Common/Common.h>
+
+#include "esp32_rc_common.h"
+#include <freertos/queue.h>
+#include <freertos/semphr.h>
 #include <freertos/timers.h>
-#include <queue>
 
 
-/*
- *
- * Remote Control Library
- * 
- * ESP32RemoteControl : Abstract Class
- * Support below protocols :
- * - ESPNOW
- * - Wifi 
- * 
- * - BLE (to do)
- * - Bluetooth Serial (to do)
- * - NRD24 (to do)
- *
-*/
+// ESP32RemoteControl class
+// This is the base class for all ESP32 remote control protocols.
+// It provides the common interface and logic for handling messages,
+// heartbeats, and connection states.
+// Protocol-specific implementations should inherit from this class
+// and implement the pure virtual methods for sending messages,
+// connecting, and handling protocol-specific logic.
+
+// fast_mode_ :     is used to enable faster message sync processing (
+//                  queue depth is 1, also message sent immediately, no garantee of delivery)
+//                  For sending - this is useful for low-latency applications
+//                  For receiving - this is useful for high-frequency data streams, onyl recieve the latest message
 
 
-class ESP32RemoteControl : public Task {
-  public:
-    // pointer function 
-    typedef void (*funcPtrType)(void);                    // a function pointer type
-        
-    // constructor
-    ESP32RemoteControl(bool fast_mode, bool debug_mode);  
+
+
+class ESP32RemoteControl {
+public:
+    using recv_cb_t = void (*)(const RCMessage_t& msg);
+
+    ESP32RemoteControl(bool fast_mode = false);
+    virtual ~ESP32RemoteControl();
+
+    // Pure virtuals for protocol implementations
+    virtual void connect() ;
+    virtual RCProtocol_t getProtocol() const = 0;
+
+
+    // User/upper-layer interface
+    void setOnRecieveMsgHandler(recv_cb_t cb);
+
+    virtual bool sendMsg(const RCMessage_t& msg);       // Send a message
+    virtual bool recvMsg(RCMessage_t& msg);             // recieve message
+    virtual bool sendData(const RCPayload_t& payload);  // Send a message
+    virtual bool recvData(RCPayload_t& payload);        // recieve message
     
-    // common functions
-    virtual void init(void)               = 0;            // general wrapper to init the RC configuration
-    virtual void connect(void)            = 0;            // general wrapper to establish the connection
-    virtual void send(Message data)       = 0;            // general wrapper to send data
-    virtual Message recv(void)            = 0;            // general wrapper to receive data
-    
-    void enable_fast(bool mode);                          // fast mode enabled, non-blocking
-    void enable_debug(bool mode);                         // debug mode enabled, output debug info
-
-    funcPtrType custom_handler            = nullptr;      // A Custom Exception Handler.
-
-  protected:
-
-    // common settings
-    struct Metric {
-      unsigned long in_count;
-      unsigned long out_count;
-      unsigned long err_count;
-    };
-
-    Metric send_metric  = {0, 0, 0};
-    Metric recv_metric  = {0, 0, 0};
-
-    int connection_status;                                // connection status
-    int send_status;                                      // send status
-
-    bool fast_mode      = false;                          // enable or disable quick mode
-    bool debug_mode     = false;                          // enable or disable debug mode
-
-    SemaphoreHandle_t mutex;                              // for access varible locking
-      
-    TimerHandle_t send_timer;                             // Timer task to send message
-    TimerHandle_t recv_timer;                             // Timer task to recieve message
-    TimerHandle_t heartbeat_timer;                        // Timer task to send heartbeat message
-    
-    QueueHandle_t send_queue;                             // send message queue
-	  QueueHandle_t recv_queue;                             // recv message queue        
-
-    Message create_sys_msg(String data);                  // convert gaven String to Message
-    String extract_sys_msg(const Message &msg);           // extract Message.sys data to String
-
-    void set_value(int *in_varible, int value);           // thread-safe to set varible 
-    void get_value(int *in_varible, int *out_varible);    // thread-safe to get varible 
-
-    void empty_queue(QueueHandle_t queue);                // clean up all messages in queue
-    bool en_queue(QueueHandle_t queue, Message *pmsg);    // Push to queue
-    bool de_queue(QueueHandle_t queue, Message *pmsg);    // Pop from queue
-    int get_queue_depth(QueueHandle_t queue);             // get queue depth
-
-    virtual bool handshake(void)          = 0;
-    virtual void send_queue_msg(void)     = 0;
-    virtual bool op_send(Message msg)     = 0;
-
-    // ******************************************************************************* //
-    // internal functions
-    // ******************************************************************************* //
-
-    void debug(String func_name, String message) ;        // Output debug info
-    void raise_error(String func_name, String message) ;  // Common method to raise error.
-    String mac2str(const uint8_t *mac_addr) ;             // Convert MAC address to String
+    RCConnectionState_t getConnectionState() const;
 
 
-  private :
-    String exception_message;
-    void handle_exception();                              // Exception handler
-    String format_time(unsigned long ms);
-    String format_time();
-    bool is_serial_set = false;
+protected:
+    // Protocol logic helpers
 
+    void onDataReceived(const RCMessage_t& msg);
+
+    // Heartbeat logic
+    virtual void checkHeartbeat();
+    virtual void onHeartbeatReceived(const RCMessage_t& msg);
+
+
+    // Low-level send methods
+    virtual void sendSysMsg(const uint8_t msgType);
+    virtual void lowLevelSend(const RCMessage_t& msg) = 0;  // Low-level send, to be implemented by protocol
+    RCMessage_t parseRawToRCMessage();  // Parse raw data into RCMessage_t structure, to be implemented by protocol
+  
+
+    // Set or unset the peer address for communication
+    virtual void setPeerAddr(const uint8_t* peer_addr);
+    virtual void unsetPeerAddr();
+
+    RCConnectionState_t conn_state_ = RCConnectionState_t::DISCONNECTED;
+    bool fast_mode_ = false;
+
+
+    SemaphoreHandle_t data_lock_            = nullptr;
+    QueueHandle_t queue_send_               = nullptr;
+    QueueHandle_t queue_recv_               = nullptr;
+
+    TimerHandle_t timer_heartbeat_          = nullptr;
+    const uint32_t heartbeat_interval_ms_   = HEARTBEAT_INTERVAL_MS;
+    const uint32_t heartbeat_timeout_ms_    = HEARTBEAT_TIMEOUT_MS;
+    uint32_t last_heartbeat_rx_ms_          = 0;
+
+    uint8_t peer_addr_[RC_ADDR_SIZE]        = {0};
+    uint8_t my_addr_[RC_ADDR_SIZE]          = {0};
+
+    Metrics_t send_metrics_{}, recv_metrics_{};
+
+   private:
+    recv_cb_t recv_callback_ = nullptr;
+    TaskHandle_t sendFromQueueTaskHandle = nullptr;
+    static void heartbeatTimerCallback(TimerHandle_t xTimer);
+    static void sendFromQueueLoop(void* arg);
 };
-
-
