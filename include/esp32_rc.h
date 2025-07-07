@@ -22,7 +22,7 @@
 // fast_mode_ :     is used to enable faster message sync processing (
 //                  queue depth is 1, also message sent immediately, no garantee of delivery)
 //                  For sending - this is useful for low-latency applications
-//                  For receiving - this is useful for high-frequency data streams, onyl recieve the latest message
+//                  For receiving - this is useful for high-frequency data streams, only recieve the latest message
 
 
 
