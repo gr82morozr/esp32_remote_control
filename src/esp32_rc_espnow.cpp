@@ -1,5 +1,5 @@
 #include "esp32_rc_espnow.h"
-#include "config.h"
+
 
 ESP32_RC_ESPNOW* ESP32_RC_ESPNOW::instance_ = nullptr;
 

@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-#define CURRENT_LOG_LEVEL 1
+#define CURRENT_LOG_LEVEL 4
 
 // =======================================================
 // Uncomment this line when building for the CONTROLLER UI

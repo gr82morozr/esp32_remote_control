@@ -27,12 +27,15 @@ For example, to use NRF24, you would do:
 
 */
 
-#include "config.h"
+
 #include "esp32_rc_espnow.h"
 #include "esp32_rc_nrf24.h"
+#include "esp32_rc_wifi.h"
 
-#define ESP32_RC_PROTOCOL ESP32_RC_NRF24
+//#define ESP32_RC_PROTOCOL ESP32_RC_NRF24
 //#define ESP32_RC_PROTOCOL ESP32_RC_ESPNOW
+#define ESP32_RC_PROTOCOL ESP32_RC_WIFI
+
 ESP32_RC_PROTOCOL* controller = new ESP32_RC_PROTOCOL(true);
 
 unsigned long last_heartbeat_ms = 0;

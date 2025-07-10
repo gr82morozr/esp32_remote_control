@@ -122,3 +122,7 @@ enum class RCConnectionState_t : uint8_t {
 
 // NRF24 specific definitions
 #define NRF24_CHANNEL 76
+
+
+#define WIFI_PASSWORD   "rcpassword"
+#define WIFI_PORT       12345

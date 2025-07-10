@@ -13,14 +13,14 @@ class ESP32_RC_ESPNOW : public ESP32RemoteControl {
   ~ESP32_RC_ESPNOW() override;
 
   RCProtocol_t getProtocol() const override { return RC_PROTO_ESPNOW; }
-  void lowLevelSend(const RCMessage_t& msg) override;
+ 
 
  protected:
   // adding ESPNOW specific paring steps
+  void lowLevelSend(const RCMessage_t& msg) override;
   void setPeerAddr(const uint8_t* peer_addr) override;
   void unsetPeerAddr() override;
-  RCMessage_t parseRawToRCMessage(const uint8_t* data,
-                                  int len);  // overloaded from base class
+  RCMessage_t parseRawToRCMessage(const uint8_t* data,  int len);  // overloaded from base class
 
  private:
   bool init();

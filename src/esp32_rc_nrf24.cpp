@@ -1,5 +1,5 @@
 #include "esp32_rc_nrf24.h"
-#include "config.h"
+
 
 ESP32_RC_NRF24* ESP32_RC_NRF24::instance_ = nullptr;
 
@@ -15,6 +15,10 @@ ESP32_RC_NRF24::ESP32_RC_NRF24(bool fast_mode)
     }
 
     LOG("Initialized successfully.");
+
+    if (receiveTaskHandle_) {
+      vTaskDelete(receiveTaskHandle_);
+    }
 
     xTaskCreatePinnedToCore(
       instance_->receiveLoopWrapper,
