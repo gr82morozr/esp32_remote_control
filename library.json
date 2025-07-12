@@ -1,4 +1,20 @@
 {
   "name": "esp32_remote_control",
-  "version": "0.0.0+20250710204428"
+  "version": "0.0.0+20250710204428",
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32"],
+  "dependencies": [
+    {
+      "name": "esp32-common",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/gr82morozr/esp32-common.git"
+      }
+    },
+    {
+      "name": "RF24",
+      "owner": "nrf24",
+      "version": "^1.4.11"
+    }
+  ]
 }
