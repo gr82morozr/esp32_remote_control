@@ -3,25 +3,94 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>  // For memcpy, strncpy
-#include "config.h"
+
+
+// --- Log Level ---
+#ifndef CURRENT_LOG_LEVEL
+    #define CURRENT_LOG_LEVEL 4
+#endif
+
+
+
+// =======================================================
+// Common Hardware Pins (used on both sides)
+// =======================================================
+
+// --- NRF24L01 (SPI) Pins (user-overridable) ---
+#ifndef PIN_NRF_CE
+    #define PIN_NRF_CE      17
+#endif
+
+#ifndef PIN_NRF_CSN
+    #define PIN_NRF_CSN     5
+#endif
+
+#ifndef PIN_NRF_SCK
+    #define PIN_NRF_SCK     18
+#endif
+
+#ifndef PIN_NRF_MISO
+    #define PIN_NRF_MISO    19
+#endif
+
+#ifndef PIN_NRF_MOSI
+    #define PIN_NRF_MOSI    23
+#endif
+
+#ifndef NRF24_CHANNEL
+    #define NRF24_CHANNEL   76
+#endif
+
+
+
+// --- ESP-NOW specific definitions ---
+#ifndef ESPNOW_CHANNEL
+    #define ESPNOW_CHANNEL      2
+#endif
+
+#ifndef ESPNOW_OUTPUT_POWER
+    #define ESPNOW_OUTPUT_POWER 82
+#endif
+
+// --- WiFi pecific definitions ---
+#ifndef RC_WIFI_PASSWORD
+    #define RC_WIFI_PASSWORD   "rcpassword"
+#endif
+
+#ifndef RC_WIFI_PORT
+    #define RC_WIFI_PORT       12345
+#endif
+
+
+// ...add any more shared pins as needed
+
+
+
+
+
+
+
+
+
+
 
 
 // ========== Protocol Selection Enum ==========
 enum RCProtocol_t {
-  RC_PROTO_ESPNOW = 0,
-  RC_PROTO_WIFI = 1,
-  RC_PROTO_BLE = 2,
-  RC_PROTO_NRF24 = 3
+  RC_PROTO_ESPNOW   = 0,
+  RC_PROTO_WIFI     = 1,
+  RC_PROTO_BLE      = 2,
+  RC_PROTO_NRF24    = 3
 };
 
 //
-#define QUEUE_DEPTH_SEND 10
-#define QUEUE_DEPTH_RECV 10
-#define RECV_MSG_TIMEOUT_MS 5
+#define QUEUE_DEPTH_SEND        10
+#define QUEUE_DEPTH_RECV        10
+#define RECV_MSG_TIMEOUT_MS     5
 
 // ========== Common Macros ==========
-#define HEARTBEAT_INTERVAL_MS 100  // Default heartbeat interval in ms
-#define HEARTBEAT_TIMEOUT_MS  300  // Default heartbeat timeout in ms
+#define HEARTBEAT_INTERVAL_MS   100  // Default heartbeat interval in ms
+#define HEARTBEAT_TIMEOUT_MS    300  // Default heartbeat timeout in ms
 
 // ========== Message Types ==========
 enum : uint8_t {
@@ -30,9 +99,9 @@ enum : uint8_t {
 };
 
 // ========== Struct Sizes ==========
-#define RC_MESSAGE_MAX_SIZE 32
-#define RC_PAYLOAD_MAX_SIZE 25
-#define RC_ADDR_SIZE 6        // MAC address (6 bytes)
+#define RC_MESSAGE_MAX_SIZE     32
+#define RC_PAYLOAD_MAX_SIZE     25
+#define RC_ADDR_SIZE 6          // MAC address (6 bytes)
 
 // ========== Message Structure ==========
 
@@ -112,5 +181,11 @@ enum class RCConnectionState_t : uint8_t {
   ERROR = 3
 };
 
+
+
+
+
+
+// ==============================================
 
 
