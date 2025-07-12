@@ -38,7 +38,6 @@ For example, to use NRF24, you would do:
 
 ESP32_RC_PROTOCOL* controller = new ESP32_RC_PROTOCOL(true);
 
-unsigned long last_heartbeat_ms = 0;
 unsigned long last_data_send_ms = 0;
 
 void setup() {
