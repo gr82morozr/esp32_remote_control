@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>  // For memcpy, strncpy
-
+#include "config.h"
 
 // ========== Protocol Selection Enum ==========
 enum RCProtocol_t {
@@ -80,10 +80,8 @@ struct RCMessage_t {
 // ==== End packed layout ====
 
 // Compile-time size check
-static_assert(sizeof(RCPayload_t) == RC_PAYLOAD_MAX_SIZE,
-              "RCPayload_t must be 21 bytes");
-static_assert(sizeof(RCMessage_t) == RC_MESSAGE_MAX_SIZE,
-              "RCMessage_t must be 32 bytes");
+static_assert(sizeof(RCPayload_t) == RC_PAYLOAD_MAX_SIZE,   "RCPayload_t must be 21 bytes");
+static_assert(sizeof(RCMessage_t) == RC_MESSAGE_MAX_SIZE,   "RCMessage_t must be 32 bytes");
 
 // ========== Broadcast/Null MAC ==========
 #define RC_BROADCAST_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
@@ -115,14 +113,3 @@ enum class RCConnectionState_t : uint8_t {
 
 
 
-// ESP-NOW specific definitions
-#define ESPNOW_CHANNEL 2
-#define ESPNOW_OUTPUT_POWER 82
-
-
-// NRF24 specific definitions
-#define NRF24_CHANNEL 76
-
-
-#define WIFI_PASSWORD   "rcpassword"
-#define WIFI_PORT       12345

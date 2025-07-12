@@ -48,7 +48,7 @@ void ESP32_RC_WIFI::autoNegotiateRole() {
 
   if (found_peer) {
     LOG("[WiFi] Peer found (%s), connecting as STA...", rc_ssid_);
-    WiFi.begin((const char*)rc_ssid_, (const char*)WIFI_PASSWORD);
+    WiFi.begin((const char*)rc_ssid_, (const char*)RC_WIFI_PASSWORD);
     unsigned long t0 = millis();
     while (WiFi.status() != WL_CONNECTED) {
       DELAY(200);
@@ -61,7 +61,7 @@ void ESP32_RC_WIFI::autoNegotiateRole() {
   } else {
     LOG("[WiFi] No peer found, starting AP: %s\n", rc_ssid_);
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(rc_ssid_, WIFI_PASSWORD);
+    WiFi.softAP(rc_ssid_, RC_WIFI_PASSWORD);
     DELAY(200);
     is_ap_ = true;
     waitForSTAConnection();
@@ -70,10 +70,10 @@ void ESP32_RC_WIFI::autoNegotiateRole() {
 
 void ESP32_RC_WIFI::waitForAPConnection() {
   tcp_client_.stop();
-  tcp_client_.connect(IPAddress(192, 168, 4, 1), WIFI_PORT);
+  tcp_client_.connect(IPAddress(192, 168, 4, 1), RC_WIFI_PORT);
   unsigned long t0 = millis();
   while (!tcp_client_.connected() && millis() - t0 < 5000) {
-    tcp_client_.connect(IPAddress(192, 168, 4, 1), WIFI_PORT);
+    tcp_client_.connect(IPAddress(192, 168, 4, 1), RC_WIFI_PORT);
     delay(200);
   }
   connected_ = tcp_client_.connected();

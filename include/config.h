@@ -1,7 +1,11 @@
 #pragma once
 #include <Arduino.h>
 
-#define CURRENT_LOG_LEVEL 4
+// --- Log Level ---
+#ifndef CURRENT_LOG_LEVEL
+    #define CURRENT_LOG_LEVEL 4
+#endif
+
 
 // =======================================================
 // Uncomment this line when building for the CONTROLLER UI
@@ -35,13 +39,50 @@
 // Common Hardware Pins (used on both sides)
 // =======================================================
 
-// NRF24L01 (SPI)
-#define PIN_NRF_CE      17
-#define PIN_NRF_CSN     5
-#define PIN_NRF_SCK     18
-#define PIN_NRF_MISO    19
-#define PIN_NRF_MOSI    23
+// --- NRF24L01 (SPI) Pins (user-overridable) ---
+#ifndef PIN_NRF_CE
+    #define PIN_NRF_CE      17
+#endif
 
+#ifndef PIN_NRF_CSN
+    #define PIN_NRF_CSN     5
+#endif
+
+#ifndef PIN_NRF_SCK
+    #define PIN_NRF_SCK     18
+#endif
+
+#ifndef PIN_NRF_MISO
+    #define PIN_NRF_MISO    19
+#endif
+
+#ifndef PIN_NRF_MOSI
+    #define PIN_NRF_MOSI    23
+#endif
+
+#ifndef NRF24_CHANNEL
+    #define NRF24_CHANNEL 76
+#endif
+
+
+
+// --- ESP-NOW specific definitions ---
+#ifndef ESPNOW_CHANNEL
+    #define ESPNOW_CHANNEL 2
+#endif
+
+#ifndef ESPNOW_OUTPUT_POWER
+    #define ESPNOW_OUTPUT_POWER 82
+#endif
+
+// --- WiFi pecific definitions ---
+#ifndef RC_WIFI_PASSWORD
+    #define RC_WIFI_PASSWORD   "rcpassword"
+#endif
+
+#ifndef RC_WIFI_PORT
+    #define RC_WIFI_PORT       12345
+#endif
 
 
 // Example: General RC buttons, available on both sides
