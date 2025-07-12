@@ -34,7 +34,17 @@
 #endif
 
 
-#define ENABLE_ESPNOW  1
+#define ENABLE_ESPNOW       1
+
+
+
+
+
+
+
+
+
+
 // =======================================================
 // Common Hardware Pins (used on both sides)
 // =======================================================
@@ -61,14 +71,14 @@
 #endif
 
 #ifndef NRF24_CHANNEL
-    #define NRF24_CHANNEL 76
+    #define NRF24_CHANNEL   76
 #endif
 
 
 
 // --- ESP-NOW specific definitions ---
 #ifndef ESPNOW_CHANNEL
-    #define ESPNOW_CHANNEL 2
+    #define ESPNOW_CHANNEL      2
 #endif
 
 #ifndef ESPNOW_OUTPUT_POWER
@@ -104,8 +114,8 @@
 // =======================================================
 // Switch Pins or protocol selector switches (optional)
 // =======================================================
-#define PIN_SWITCH1      13
-#define PIN_SWITCH2      14
+#define PIN_SWITCH1         13
+#define PIN_SWITCH2         14
 
 // ...add any more shared pins as needed
 
