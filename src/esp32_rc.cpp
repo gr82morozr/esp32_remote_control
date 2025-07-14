@@ -183,7 +183,7 @@ void ESP32RemoteControl::unsetPeerAddr() {
 void ESP32RemoteControl::heartbeatTimerCallback(TimerHandle_t xTimer) {
   ESP32RemoteControl* self = static_cast<ESP32RemoteControl*>(pvTimerGetTimerID(xTimer));
   if (self) {
-    toggleGPIO(LED_BUILTIN);  // Toggle LED for heartbeat indication
+    //toggleGPIO(LED_BUILTIN);  // Toggle LED for heartbeat indication
     self->sendSysMsg(RCMSG_TYPE_HEARTBEAT);
     // check heartbeat status
     self->checkHeartbeat();
