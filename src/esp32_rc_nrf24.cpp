@@ -8,7 +8,8 @@ ESP32_RC_NRF24::ESP32_RC_NRF24(bool fast_mode)
     instance_ = this;
     LOG("Initializing NRF24...");
     spiBus_ = new SPIClass(NRF_SPI_BUS);
-    radio_    = RF24(PIN_NRF_CE, PIN_NRF_CSN);
+    spiBus_->begin(PIN_NRF_SCK,PIN_NRF_MISO , PIN_NRF_MOSI);
+    radio_  = RF24(PIN_NRF_CE, PIN_NRF_CSN);
 
     if (!init()) {
         LOG_ERROR("NRF24 init failed!");
@@ -43,6 +44,9 @@ ESP32_RC_NRF24::~ESP32_RC_NRF24() {
 bool ESP32_RC_NRF24::init() {
   genUniqueAddr(my_addr_);
   if (!radio_.begin(spiBus_)) {
+
+
+    
     LOG_ERROR("NRF24 begin failed!");
     SYS_HALT ;
   }

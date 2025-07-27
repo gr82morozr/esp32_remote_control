@@ -14,7 +14,7 @@
 --- NRF24L01 (SPI) Pins (user-overridable) ---
 Sample: 
 -----------
-#define NRF_SPI_BUS           HSPI   // HSPI or VSPI
+#define NRF_SPI_BUS           HSPI   // HSPI or VSPI (default)
 #define PIN_NRF_CE            17
 #define PIN_NRF_CSN           5
 #define PIN_NRF_SCK           18

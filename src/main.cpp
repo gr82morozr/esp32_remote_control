@@ -26,7 +26,6 @@ For example, to use NRF24, you would do:
 
 
 */
-#define CURRENT_LOG_LEVEL 1
 
 #include "esp32_rc_espnow.h"
 #include "esp32_rc_nrf24.h"
@@ -36,12 +35,16 @@ For example, to use NRF24, you would do:
 //#define ESP32_RC_PROTOCOL ESP32_RC_ESPNOW
 //#define ESP32_RC_PROTOCOL ESP32_RC_WIFI
 
-ESP32_RC_PROTOCOL* controller = new ESP32_RC_PROTOCOL(true);
+ESP32_RC_PROTOCOL* controller = nullptr;  // Declare globally
+//ESP32_RC_PROTOCOL* controller = new ESP32_RC_PROTOCOL(true);
 
 unsigned long last_data_send_ms = 0;
 
 void setup() {
   Serial.begin(115200);
+
+  controller = new ESP32_RC_PROTOCOL(true);  // Initialize inside setup
+
   pinMode(BUILTIN_LED, OUTPUT);
 
   LOG("ESP32_RC Example");
@@ -66,7 +69,7 @@ void loop() {
         .flags = 0xA5
     };
     controller->sendData(payload);
-    LOG("Sent test data");
+    LOG_ERROR("Sent test data");
     last_data_send_ms = millis();
   }
 
