@@ -1,12 +1,13 @@
 #pragma once
 
 #include <Arduino.h>
+#include "esp32_rc_common.h"
 #include <Common/Common.h>
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include <freertos/timers.h>
 
-#include "esp32_rc_common.h"
+
 
 // ESP32RemoteControl class
 // This is the base class for all ESP32 remote control protocols.

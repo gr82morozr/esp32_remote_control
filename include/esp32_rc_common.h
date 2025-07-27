@@ -3,75 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>  // For memcpy, strncpy
-
-
-// --- Log Level ---
-#ifndef CURRENT_LOG_LEVEL
-    #define CURRENT_LOG_LEVEL 4
-#endif
-
-
-
-// =======================================================
-// Common Hardware Pins (used on both sides)
-// =======================================================
-
-// --- NRF24L01 (SPI) Pins (user-overridable) ---
-#ifndef PIN_NRF_CE
-    #define PIN_NRF_CE      17
-#endif
-
-#ifndef PIN_NRF_CSN
-    #define PIN_NRF_CSN     5
-#endif
-
-#ifndef PIN_NRF_SCK
-    #define PIN_NRF_SCK     18
-#endif
-
-#ifndef PIN_NRF_MISO
-    #define PIN_NRF_MISO    19
-#endif
-
-#ifndef PIN_NRF_MOSI
-    #define PIN_NRF_MOSI    23
-#endif
-
-#ifndef NRF24_CHANNEL
-    #define NRF24_CHANNEL   76
-#endif
-
-
-
-// --- ESP-NOW specific definitions ---
-#ifndef ESPNOW_CHANNEL
-    #define ESPNOW_CHANNEL      2
-#endif
-
-#ifndef ESPNOW_OUTPUT_POWER
-    #define ESPNOW_OUTPUT_POWER 82
-#endif
-
-// --- WiFi pecific definitions ---
-#ifndef RC_WIFI_PASSWORD
-    #define RC_WIFI_PASSWORD   "rcpassword"
-#endif
-
-#ifndef RC_WIFI_PORT
-    #define RC_WIFI_PORT       12345
-#endif
-
-
-// ...add any more shared pins as needed
-
-
-
-
-
-
-
-
-
+#include "esp32_rc_user_config.h"
 
 
 
@@ -108,8 +40,11 @@ enum : uint8_t {
 // ==== Begin packed layout ====
 #pragma pack(push, 1)
 
+
+#ifndef RC_PAYLOAD_T_DEFINED
+#define RC_PAYLOAD_T_DEFINED
 /**
- * @brief Struct for 21-byte packed payload
+ * @brief Struct for 25-byte packed payload
  */
 struct RCPayload_t {
   uint8_t id1;
@@ -123,6 +58,9 @@ struct RCPayload_t {
   float value5;
   uint8_t flags;
 };
+#endif
+
+
 
 /**
  * @brief Struct for full 32-byte RC message

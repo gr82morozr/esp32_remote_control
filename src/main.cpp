@@ -26,7 +26,7 @@ For example, to use NRF24, you would do:
 
 
 */
-
+#define CURRENT_LOG_LEVEL 1
 
 #include "esp32_rc_espnow.h"
 #include "esp32_rc_nrf24.h"
@@ -75,10 +75,7 @@ void loop() {
   RCPayload_t incoming;
   if (controller->recvData(incoming)) {
     writeGPIO(BUILTIN_LED, incoming.id1==0 ? HIGH : LOW);
-    LOG("Received data: id1=%d, id2=%d, id3=%d, id4=%d, value1=%.2f, value2=%.2f, value3=%.2f, value4=%.2f, flags=0x%02X",
-        incoming.id1, incoming.id2, incoming.id3, incoming.id4,
-        incoming.value1, incoming.value2, incoming.value3, incoming.value4,
-        incoming.flags);
+    LOG_ERROR("Received data: value1=%.6f",incoming.value1);
   }
   
   DELAY(5);
