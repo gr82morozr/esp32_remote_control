@@ -34,8 +34,8 @@ Sample:
 
 
 // --- ESP-NOW specific definitions ---
-#define ESPNOW_CHANNEL          2
-#define ESPNOW_OUTPUT_POWER     82
+#define ESPNOW_CHANNEL        2
+#define ESPNOW_OUTPUT_POWER   82
 
 
 // --- WiFi pecific definitions ---

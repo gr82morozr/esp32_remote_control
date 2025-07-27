@@ -6,10 +6,10 @@ ESP32_RC_ESPNOW* ESP32_RC_ESPNOW::instance_ = nullptr;
 ESP32_RC_ESPNOW::ESP32_RC_ESPNOW(bool fast_mode)
     : ESP32RemoteControl(fast_mode) {
     // Initialize the ESPNOW instance
-    Serial.println( "[ESP32_RC_ESPNOW] Initializing ESPNOW...");
+    LOG_DEBUG( "[ESP32_RC_ESPNOW] Initializing ESPNOW...");
     instance_ = this;
     if (!init()) {
-        Serial.println("[ERROR] ESPNOW init failed!");
+        LOG_DEBUG("[ERROR] ESPNOW init failed!");
         SYS_HALT;   
     }
 }
@@ -29,7 +29,7 @@ bool ESP32_RC_ESPNOW::init() {
     esp_wifi_set_max_tx_power(ESPNOW_OUTPUT_POWER);
    
     esp_err_t initResult = esp_now_init();
-    PRINT("esp_now_init: "); PRINTLN(initResult);
+    LOG_DEBUG("esp_now_init: "); LOG_DEBUG(initResult);
     if (initResult != ESP_OK) {
         return false;
     }
@@ -46,8 +46,8 @@ bool ESP32_RC_ESPNOW::init() {
     peerInfo.ifidx = WIFI_IF_STA;
     if (!esp_now_is_peer_exist(bcast)) {
         esp_err_t addPeerRes = esp_now_add_peer(&peerInfo);
-        PRINT("esp_now_add_peer (broadcast): ");
-        PRINTLN(addPeerRes);
+        LOG_DEBUG("esp_now_add_peer (broadcast): ");
+        LOG_DEBUG(addPeerRes);
     }
 
     esp_now_register_recv_cb(ESP32_RC_ESPNOW::onDataRecvStatic);
@@ -94,7 +94,7 @@ void ESP32_RC_ESPNOW::unsetPeerAddr() {
 // --- Static Callback Wrappers ---
 void ESP32_RC_ESPNOW::onDataRecvStatic(const uint8_t *mac, const uint8_t *data, int len) {
   // Called when data is received
-  PRINTLN("ESPNOW: Data received");
+  LOG_DEBUG("ESPNOW: Data received");
   if (instance_) {
     RCMessage_t msg = {};
     msg = instance_->parseRawToRCMessage(data, len);

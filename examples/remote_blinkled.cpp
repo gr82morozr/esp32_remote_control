@@ -27,7 +27,6 @@ For example, to use NRF24, you would do:
 
 */
 
-
 #include "esp32_rc_espnow.h"
 #include "esp32_rc_nrf24.h"
 #include "esp32_rc_wifi.h"
@@ -36,13 +35,16 @@ For example, to use NRF24, you would do:
 //#define ESP32_RC_PROTOCOL ESP32_RC_ESPNOW
 //#define ESP32_RC_PROTOCOL ESP32_RC_WIFI
 
-ESP32_RC_PROTOCOL* controller = new ESP32_RC_PROTOCOL(true);
+ESP32_RC_PROTOCOL* controller = nullptr;  // Declare globally
+//ESP32_RC_PROTOCOL* controller = new ESP32_RC_PROTOCOL(true);
 
-unsigned long last_heartbeat_ms = 0;
 unsigned long last_data_send_ms = 0;
 
 void setup() {
   Serial.begin(115200);
+
+  controller = new ESP32_RC_PROTOCOL(true);  // Initialize inside setup
+
   pinMode(BUILTIN_LED, OUTPUT);
 
   LOG("ESP32_RC Example");
@@ -57,29 +59,10 @@ void setup() {
 
 
 void loop() {
-  
-  // Send test data every 3000 ms
-  if (millis() - last_data_send_ms > 300) {
-    RCPayload_t payload = {
-        .id1 = 1, .id2 = 2, .id3 = 3, .id4 = 4,
-        .value1 = 10.1f, .value2 = 20.2f,
-        .value3 = 30.3f, .value4 = last_data_send_ms/1000.0f,
-        .flags = 0xA5
-    };
-    controller->sendData(payload);
-    LOG("Sent test data");
-    last_data_send_ms = millis();
-  }
-
-  
-  // Try to receive a message
   RCPayload_t incoming;
   if (controller->recvData(incoming)) {
-    writeGPIO(BUILTIN_LED, incoming.id1==0 ? HIGH : LOW);
-    LOG("Received data: id1=%d, id2=%d, id3=%d, id4=%d, value1=%.2f, value2=%.2f, value3=%.2f, value4=%.2f, flags=0x%02X",
-        incoming.id1, incoming.id2, incoming.id3, incoming.id4,
-        incoming.value1, incoming.value2, incoming.value3, incoming.value4,
-        incoming.flags);
+    writeGPIO(BUILTIN_LED, incoming.id1>0 ? HIGH : LOW);
+    //LOG_ERROR("Received data: value1=%.6f",incoming.value1);
   }
   
   DELAY(5);

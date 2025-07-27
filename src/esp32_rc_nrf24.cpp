@@ -6,7 +6,7 @@ ESP32_RC_NRF24* ESP32_RC_NRF24::instance_ = nullptr;
 ESP32_RC_NRF24::ESP32_RC_NRF24(bool fast_mode)
     : ESP32RemoteControl(fast_mode) {
     instance_ = this;
-    LOG("Initializing NRF24...");
+    LOG_DEBUG("Initializing NRF24...");
     spiBus_ = new SPIClass(NRF_SPI_BUS);
     spiBus_->begin(PIN_NRF_SCK,PIN_NRF_MISO , PIN_NRF_MOSI);
     radio_  = RF24(PIN_NRF_CE, PIN_NRF_CSN);
@@ -16,7 +16,7 @@ ESP32_RC_NRF24::ESP32_RC_NRF24(bool fast_mode)
         SYS_HALT;
     }
 
-    LOG("Initialized successfully.");
+    LOG_DEBUG("Initialized successfully.");
 
     if (receiveTaskHandle_) {
       vTaskDelete(receiveTaskHandle_);
@@ -44,9 +44,6 @@ ESP32_RC_NRF24::~ESP32_RC_NRF24() {
 bool ESP32_RC_NRF24::init() {
   genUniqueAddr(my_addr_);
   if (!radio_.begin(spiBus_)) {
-
-
-    
     LOG_ERROR("NRF24 begin failed!");
     SYS_HALT ;
   }
@@ -90,10 +87,10 @@ void ESP32_RC_NRF24::lowLevelSend(const RCMessage_t& msg) {
   radio_.startListening();
 
   if (!sendSuccess && pipeType_ == 1) { // 
-    LOG("[SEND ERROR] Failed to send message of type: %d - %d", msg.type, pipeType_);
+    LOG_ERROR("[SEND ERROR] Failed to send message of type: %d - %d", msg.type, pipeType_);
     return;
   } 
-  LOG("[SENT SUCCESS] Type: %d", msg.type); 
+  LOG_DEBUG("[SENT SUCCESS] Type: %d", msg.type); 
 
 }
 
@@ -104,8 +101,6 @@ void ESP32_RC_NRF24::checkHeartbeat()  {
       switchToBroadcastPipe();  // Switch to broadcast pipe on disconnect
     }
 }
-
-
 
 String ESP32_RC_NRF24::formatAddr(const uint8_t addr[RC_ADDR_SIZE]) {
   String out;
@@ -127,14 +122,14 @@ void ESP32_RC_NRF24::receiveLoop(void* arg) {
         continue;
       };
 
-      LOG("[RECEIVED] Type= %d , Address= %s", msg.type, formatAddr(msg.from_addr));
+      LOG_DEBUG("[RECEIVED] Type= %d , Address= %s", msg.type, formatAddr(msg.from_addr));
 
       if (msg.type == RCMSG_TYPE_HEARTBEAT) {
         onHeartbeatReceived(msg);
 
         switchToPeerPipe();
       } else if (msg.type == RCMSG_TYPE_DATA) {
-        LOG("[DATA] Received from peer");
+        LOG_DEBUG("[DATA] Received from peer");
         
         onDataReceived(msg);
         switchToPeerPipe();
@@ -160,7 +155,7 @@ void ESP32_RC_NRF24::switchToBroadcastPipe() {
   };
   radio_.openWritingPipe(BROADCAST_ADDR);
   pipeType_ = 0;  // Set to broadcast pipe type
-  LOG("Switched to BROADCAST pipe");
+  LOG_DEBUG("Switched to BROADCAST pipe");
 }
 
 void ESP32_RC_NRF24::switchToPeerPipe() {
@@ -169,5 +164,5 @@ void ESP32_RC_NRF24::switchToPeerPipe() {
   };
   radio_.openWritingPipe(peer_addr_);
   pipeType_ = 1;  // Set to peer pipe type
-  LOG("Switched to PEER pipe, PeerAddress = %s", formatAddr(peer_addr_));
+  LOG_DEBUG("Switched to PEER pipe, PeerAddress = %s", formatAddr(peer_addr_));
 }

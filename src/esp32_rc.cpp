@@ -254,7 +254,6 @@ bool ESP32RemoteControl::recvData(RCPayload_t& payload) {
   if (msg.type != RCMSG_TYPE_DATA) {
     return false;  // Not a data message
   }
-
   // Extract the payload from the message
   memcpy(&payload, msg.getPayload(), sizeof(RCPayload_t));
   return true;

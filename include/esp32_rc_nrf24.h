@@ -17,9 +17,9 @@ protected:
 
 private:
   static ESP32_RC_NRF24* instance_;  // For static callback glue
-  int pipeType_ = -1;  // Current pipe type ; 0 : broadcast, 1 : peer
-  _SPI* spiBus_ = nullptr;  // SPI bus to use, default is VSPI
-  RF24 radio_ = RF24(PIN_NRF_CE, PIN_NRF_CSN);
+  int pipeType_         = -1;  // Current pipe type ; 0 : broadcast, 1 : peer
+  _SPI* spiBus_         = nullptr;  // SPI bus to use, default is VSPI
+  RF24 radio_           = RF24(PIN_NRF_CE, PIN_NRF_CSN);
   String formatAddr(const uint8_t addr[RC_ADDR_SIZE]);
   TaskHandle_t receiveTaskHandle_ = nullptr;
   const uint64_t BROADCAST_ADDR = 0xF0F0F0F0AALL;
