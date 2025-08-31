@@ -27,11 +27,10 @@ For example, to use NRF24, you would do:
 
 */
 
-#include "esp32_rc_espnow.h"
+#include "esp32_rc_nrf24.h"
 
 
-
-#define ESP32_RC_PROTOCOL ESP32_RC_ESPNOW
+#define ESP32_RC_PROTOCOL ESP32_RC_NRF24
 
 ESP32_RC_PROTOCOL* controller = nullptr;  // Declare globally
 
@@ -41,11 +40,11 @@ RCPayload_t Outgoing = {0};
 RCPayload_t incoming;
 void setup() {
   Serial.begin(115200);
-  controller = new ESP32_RC_PROTOCOL(false);  // Initialize inside setup
+  controller = new ESP32_RC_PROTOCOL(true);  // Initialize inside setup
   pinMode(BUILTIN_LED, OUTPUT);
   LOG("ESP32_RC Example");
   DELAY(1000);
-  LOG("Starting ESP32_RC demo - Protocol: %s ", String(controller->getProtocol()));
+  LOG("Starting ESP32_RC demo - Protocol: %s ", protocolToString(controller->getProtocol()));
   
   // Global metrics control (affects all controller instances)
   ESP32_RC_PROTOCOL::enableGlobalMetrics(true);  // Enable metrics calculation

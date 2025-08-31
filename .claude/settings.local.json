@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pio run:*)",
+      "Bash(arduino-cli compile:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

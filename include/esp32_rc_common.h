@@ -15,6 +15,17 @@ enum RCProtocol_t {
   RC_PROTO_NRF24    = 3
 };
 
+// Helper function to convert protocol enum to string
+inline const char* protocolToString(RCProtocol_t protocol) {
+  switch (protocol) {
+    case RC_PROTO_ESPNOW: return "ESPNOW";
+    case RC_PROTO_WIFI:   return "WIFI";
+    case RC_PROTO_BLE:    return "BLE";
+    case RC_PROTO_NRF24:  return "NRF24";
+    default:              return "UNKNOWN";
+  }
+}
+
 //
 #define QUEUE_DEPTH_SEND        10
 #define QUEUE_DEPTH_RECV        10

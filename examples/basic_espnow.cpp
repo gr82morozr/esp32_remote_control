@@ -46,15 +46,34 @@ void setup() {
   LOG("ESP32_RC Example");
   DELAY(1000);
   LOG("Starting ESP32_RC demo - Protocol: %s ", String(controller->getProtocol()));
+  
+  // Global metrics control (affects all controller instances)
+  ESP32_RC_PROTOCOL::enableGlobalMetrics(true);  // Enable metrics calculation
+  // ESP32_RC_PROTOCOL::disableGlobalMetrics();  // Uncomment to disable metrics
+  
+  // Enable automatic metrics display every 1 second
+  controller->enableMetricsDisplay(true, 1000);
+  
   // Init the controller
   controller->connect();
 }
 
+
 void loop() {
+  // Send data
   Outgoing.value1 = millis() / 1000.0f;  // Update value1 with current time in seconds
   controller->sendData(Outgoing);  // Send the data
-  LOG("Sent data: value1=%.6f",Outgoing.value1);
+  
+  // Receive data (but don't print it - metrics will show success/failure)
   if (controller->recvData(incoming)) {
-    LOG("Received data: value1=%.6f",incoming.value1);
+    // Data received successfully - metrics automatically tracked
+    // Optional: Toggle LED or other indicator
+    toggleGPIO(BUILTIN_LED);
   }
+  
+  // Print metrics automatically every second (handled by base class)
+  controller->printMetrics();
+  
+  // Small delay to avoid overwhelming the system
+  DELAY(5);
 }
