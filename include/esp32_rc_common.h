@@ -1,9 +1,18 @@
 #pragma once
+/*
+ * ESP32 Remote Control - Common Definitions
+ * 
+ * This file contains internal framework settings, data structures, and constants.
+ * These are optimized defaults that should work well for most applications.
+ * 
+ * For user-configurable settings (pins, channels, etc.), see esp32_rc_user_config.h
+ */
+
 #include <Arduino.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>  // For memcpy, strncpy
-#include "esp32_rc_user_config.h"
+#include "esp32_rc_user_config.h"  // Include user settings first
 
 
 
@@ -26,16 +35,41 @@ inline const char* protocolToString(RCProtocol_t protocol) {
   }
 }
 
-//
-#define QUEUE_DEPTH_SEND        10
-#define QUEUE_DEPTH_RECV        10
-#define RECV_MSG_TIMEOUT_MS     5
-#define MAX_SEND_RETRIES        3
-#define RETRY_DELAY_MS          10
+// =======================================================
+// INTERNAL FRAMEWORK CONFIGURATION
+// =======================================================
+/**
+ * These settings control the internal operation of the RC framework.
+ * They are optimized defaults that work well for most applications.
+ * Advanced users can override these by defining them before including headers.
+ */
 
-// ========== Common Macros ==========
-#define HEARTBEAT_INTERVAL_MS   100  // Default heartbeat interval in ms
-#define HEARTBEAT_TIMEOUT_MS    300  // Default heartbeat timeout in ms
+// --- Message Queue Settings ---
+#ifndef QUEUE_DEPTH_SEND
+#define QUEUE_DEPTH_SEND        10    // Send queue depth (number of messages)
+#endif
+#ifndef QUEUE_DEPTH_RECV  
+#define QUEUE_DEPTH_RECV        10    // Receive queue depth (number of messages)
+#endif
+#ifndef RECV_MSG_TIMEOUT_MS
+#define RECV_MSG_TIMEOUT_MS     5     // Timeout for queue operations (ms)
+#endif
+
+// --- Retry Logic Settings ---
+#ifndef MAX_SEND_RETRIES
+#define MAX_SEND_RETRIES        3     // Framework-level send retries (not radio retries)
+#endif
+#ifndef RETRY_DELAY_MS
+#define RETRY_DELAY_MS          10    // Delay between framework retries (ms)
+#endif
+
+// --- Connection Management ---
+#ifndef HEARTBEAT_INTERVAL_MS
+#define HEARTBEAT_INTERVAL_MS   100   // How often to send heartbeats (ms)
+#endif
+#ifndef HEARTBEAT_TIMEOUT_MS  
+#define HEARTBEAT_TIMEOUT_MS    300   // Connection timeout without heartbeat (ms)
+#endif
 
 // ========== Message Types ==========
 enum : uint8_t {

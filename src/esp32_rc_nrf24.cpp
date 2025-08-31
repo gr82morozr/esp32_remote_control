@@ -102,11 +102,11 @@ bool ESP32_RC_NRF24::init() {
         return false;
     }
     
-    // Configure radio parameters
+    // Configure radio parameters from user config
     radio_.setChannel(NRF24_CHANNEL);
-    radio_.setDataRate(RF24_1MBPS);
-    radio_.setPALevel(RF24_PA_HIGH);
-    radio_.setRetries(5, 15);  // 5 retries, 15*250us delay
+    radio_.setDataRate(NRF24_DATA_RATE);
+    radio_.setPALevel(NRF24_PA_LEVEL);
+    radio_.setRetries(NRF24_RETRY_DELAY, NRF24_RETRY_COUNT);
     radio_.enableDynamicPayloads();
     radio_.setCRCLength(RF24_CRC_16);
     radio_.setAutoAck(true);
@@ -133,6 +133,16 @@ bool ESP32_RC_NRF24::init() {
     my_address_.setAddress(my_addr_, RC_ADDR_SIZE);
     
     LOG("NRF24 My Address: %s (NRF: %s)", formatAddr(my_addr_).c_str(), formatNrfAddr(nrf_my_addr_).c_str());
+    LOG("NRF24 Config: Channel=%d, DataRate=%s, Power=%s, Retries=%d/%d", 
+        NRF24_CHANNEL,
+        (NRF24_DATA_RATE == RF24_250KBPS ? "250K" : 
+         NRF24_DATA_RATE == RF24_1MBPS ? "1M" : 
+         NRF24_DATA_RATE == RF24_2MBPS ? "2M" : "Unknown"),
+        (NRF24_PA_LEVEL == RF24_PA_MIN ? "MIN" :
+         NRF24_PA_LEVEL == RF24_PA_LOW ? "LOW" :
+         NRF24_PA_LEVEL == RF24_PA_HIGH ? "HIGH" :
+         NRF24_PA_LEVEL == RF24_PA_MAX ? "MAX" : "Unknown"),
+        NRF24_RETRY_DELAY, NRF24_RETRY_COUNT);
     
     // Start in broadcast mode for discovery
     switchToBroadcastPipe();
