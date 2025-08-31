@@ -28,15 +28,13 @@ For example, to use NRF24, you would do:
 */
 
 #include "esp32_rc_espnow.h"
-#include "esp32_rc_nrf24.h"
-#include "esp32_rc_wifi.h"
 
-//#define ESP32_RC_PROTOCOL ESP32_RC_NRF24
+
+
 #define ESP32_RC_PROTOCOL ESP32_RC_ESPNOW
-//#define ESP32_RC_PROTOCOL ESP32_RC_WIFI
 
 ESP32_RC_PROTOCOL* controller = nullptr;  // Declare globally
-//ESP32_RC_PROTOCOL* controller = new ESP32_RC_PROTOCOL(true);
+
 
 unsigned long last_data_send_ms = 0;
 RCPayload_t Outgoing = {0};
@@ -55,9 +53,8 @@ void setup() {
 void loop() {
   Outgoing.value1 = millis() / 1000.0f;  // Update value1 with current time in seconds
   controller->sendData(Outgoing);  // Send the data
-
+  LOG("Sent data: value1=%.6f",Outgoing.value1);
   if (controller->recvData(incoming)) {
-    //writeGPIO(BUILTIN_LED, incoming.id1>0 ? LOW : HIGH);
-    LOG_ERROR("Received data: value1=%.6f",incoming.value1);
+    LOG("Received data: value1=%.6f",incoming.value1);
   }
 }

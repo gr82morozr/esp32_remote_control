@@ -33,6 +33,10 @@ class ESP32RemoteControl {
   // Pure virtuals for protocol implementations
   virtual void connect();
   virtual RCProtocol_t getProtocol() const = 0;
+  
+  // Configuration interface for protocol-specific settings
+  virtual bool setProtocolConfig(const char* key, const char* value) { return false; }
+  virtual bool getProtocolConfig(const char* key, char* value, size_t len) { return false; }
 
   // User/upper-layer interface
   void setOnRecieveMsgHandler(recv_cb_t cb);
@@ -43,6 +47,21 @@ class ESP32RemoteControl {
   virtual bool recvData(RCPayload_t& payload);        // recieve message
 
   RCConnectionState_t getConnectionState() const;
+  
+  // Metrics access
+  Metrics_t getSendMetrics() const { return send_metrics_; }
+  Metrics_t getReceiveMetrics() const { return recv_metrics_; }
+  void resetMetrics() { send_metrics_.reset(); recv_metrics_.reset(); }
+  
+  // Global metrics control
+  static void enableGlobalMetrics(bool enable = true);
+  static void disableGlobalMetrics() { enableGlobalMetrics(false); }
+  static bool isGlobalMetricsEnabled() { return RC_METRICS_ENABLED; }
+  
+  // Metrics display and analysis
+  void printMetrics(bool forceHeader = false);
+  void enableMetricsDisplay(bool enable = true, uint32_t interval_ms = 1000);
+  void disableMetricsDisplay() { enableMetricsDisplay(false); }
 
  protected:
   // Protocol logic helpers
@@ -59,12 +78,17 @@ class ESP32RemoteControl {
   virtual void lowLevelSend(const RCMessage_t& msg) = 0;
 
   // Parse raw data into RCMessage_t structure, to be implemented by protocol
-  RCMessage_t parseRawToRCMessage();
+  virtual RCMessage_t parseRawData(const uint8_t* data, size_t len) = 0;
 
   // Set or unset the peer address for communication
-  virtual void setPeerAddr(const uint8_t* peer_addr);
+  virtual void setPeerAddr(const uint8_t* peer_addr);  // Legacy interface (6-byte MAC)
+  virtual void setPeerAddr(const RCAddress_t& peer_addr);  // Generic interface
   // Unset the peer address, typically called on disconnect
   virtual void unsetPeerAddr();
+  
+  // Get protocol-specific address sizes
+  virtual uint8_t getAddressSize() const { return RC_ADDR_SIZE; }  // Default: MAC address size
+  virtual RCAddress_t createBroadcastAddress() const;  // Protocol-specific broadcast address
 
   // Default connection state
   RCConnectionState_t conn_state_ = RCConnectionState_t::DISCONNECTED;
@@ -86,13 +110,21 @@ class ESP32RemoteControl {
   const uint32_t heartbeat_timeout_ms_ = HEARTBEAT_TIMEOUT_MS;
   uint32_t last_heartbeat_rx_ms_ = 0;
 
-  // Peer address
-  uint8_t peer_addr_[RC_ADDR_SIZE] = {0};
-  // My address )
-  uint8_t my_addr_[RC_ADDR_SIZE] = {0};
+  // Address handling - both legacy and generic
+  uint8_t peer_addr_[RC_ADDR_SIZE] = {0};  // Legacy 6-byte peer address (for compatibility)
+  uint8_t my_addr_[RC_ADDR_SIZE] = {0};    // Legacy 6-byte my address (for compatibility)
+  
+  RCAddress_t peer_address_;  // Generic peer address
+  RCAddress_t my_address_;    // Generic my address
 
   // Metrics for send/receive operations
   Metrics_t send_metrics_{}, recv_metrics_{};
+  
+  // Metrics display control
+  bool metrics_display_enabled_ = false;
+  uint32_t metrics_interval_ms_ = 1000;
+  uint32_t last_metrics_print_ms_ = 0;
+  static int metrics_line_count_;  // Static for header management across instances
 
  private:
   // Internal method to handle received messages

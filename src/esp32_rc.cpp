@@ -1,10 +1,42 @@
 #include "esp32_rc.h"
 
+// Static member initialization
+int ESP32RemoteControl::metrics_line_count_ = 0;
+
+// Global metrics configuration (default enabled)
+bool RC_METRICS_ENABLED = true;
+
+/**
+ * @brief Constructor for ESP32RemoteControl base class
+ * 
+ * Initializes the core remote control framework including FreeRTOS primitives,
+ * message queues, heartbeat timer, and background tasks. This constructor sets up
+ * the foundation for all protocol-specific implementations.
+ * 
+ * @param fast_mode Operating mode selection:
+ *   - false (default): Reliable mode with queue depth of 10 messages
+ *   - true: Low-latency mode with queue depth of 1 (may drop messages)
+ * 
+ * Initialization sequence:
+ * 1. Creates recursive mutex for thread-safe access
+ * 2. Sets up send/receive message queues (size depends on fast_mode)
+ * 3. Creates heartbeat timer (100ms interval by default)
+ * 4. Starts background task for queue processing
+ * 5. Initializes connection state and peer addressing
+ * 
+ * Example usage:
+ *   ESP32RemoteControl* controller = new ESP32_RC_ESPNOW(false);  // Reliable
+ *   ESP32RemoteControl* controller = new ESP32_RC_WIFI(true);     // Low-latency
+ */
 ESP32RemoteControl::ESP32RemoteControl(bool fast_mode) : fast_mode_(fast_mode) {
 
   LOG("Initializing...");
   conn_state_ = RCConnectionState_t::DISCONNECTED;
   memset(peer_addr_, 0, RC_ADDR_SIZE);
+  
+  // Initialize generic addresses
+  peer_address_.clear();
+  my_address_.clear();
 
 
 
@@ -62,6 +94,18 @@ ESP32RemoteControl::ESP32RemoteControl(bool fast_mode) : fast_mode_(fast_mode) {
   LOG("Initialization complete.");
 }
 
+/**
+ * @brief Destructor for ESP32RemoteControl base class
+ * 
+ * Cleanly shuts down all FreeRTOS resources including timers, semaphores,
+ * and message queues. Ensures no resource leaks when controller is destroyed.
+ * 
+ * Cleanup sequence:
+ * 1. Stops and deletes heartbeat timer
+ * 2. Deletes recursive mutex
+ * 3. Deletes send and receive message queues
+ * 4. Background task cleanup handled by FreeRTOS
+ */
 ESP32RemoteControl::~ESP32RemoteControl() {
   if (timer_heartbeat_) {
     xTimerStop(timer_heartbeat_, 0);
@@ -82,6 +126,25 @@ ESP32RemoteControl::~ESP32RemoteControl() {
   }
 }
 
+/**
+ * @brief Initiate connection process for the remote control protocol
+ * 
+ * Starts the heartbeat mechanism and sets connection state to CONNECTING.
+ * This method should be called after controller initialization to begin
+ * communication attempts.
+ * 
+ * Connection flow:
+ * 1. Starts heartbeat timer (begins sending periodic heartbeat messages)
+ * 2. Sets state to CONNECTING
+ * 3. Protocol-specific connection logic handled in derived classes
+ * 4. State transitions to CONNECTED when peer responds
+ * 
+ * Example usage:
+ *   controller->connect();  // Start attempting to connect
+ *   while (controller->getConnectionState() != RCConnectionState_t::CONNECTED) {
+ *     delay(100);  // Wait for connection establishment
+ *   }
+ */
 void ESP32RemoteControl::connect() {
   // Start the heartbeat timer
   if (timer_heartbeat_ && !xTimerIsTimerActive(timer_heartbeat_)) {
@@ -95,23 +158,91 @@ void ESP32RemoteControl::connect() {
 }
 
 
+/**
+ * @brief Set custom callback function for received messages
+ * 
+ * Registers a user-defined function to be called whenever a valid data message
+ * is received and successfully queued. Useful for immediate message processing
+ * or custom logging.
+ * 
+ * @param cb Function pointer to callback with signature: void func(const RCMessage_t& msg)
+ *           Pass nullptr to disable callback
+ * 
+ * Example usage:
+ *   void myMessageHandler(const RCMessage_t& msg) {
+ *     Serial.println("Received message!");
+ *   }
+ *   controller->setOnRecieveMsgHandler(myMessageHandler);
+ * 
+ * Note: Callback executes in protocol context - keep processing minimal
+ */
 void ESP32RemoteControl::setOnRecieveMsgHandler(recv_cb_t cb) {
   // Set the custom callback for received messages
   recv_callback_ = cb;
 }
 
+/**
+ * @brief Get current connection state
+ * 
+ * @return Current connection state:
+ *   - DISCONNECTED: No peer communication
+ *   - CONNECTING: Attempting to establish connection
+ *   - CONNECTED: Active peer communication
+ *   - ERROR: Connection error occurred
+ * 
+ * Example usage:
+ *   if (controller->getConnectionState() == RCConnectionState_t::CONNECTED) {
+ *     // Safe to send data
+ *   }
+ */
 RCConnectionState_t ESP32RemoteControl::getConnectionState() const {
   return conn_state_;
 }
 
+/**
+ * @brief Process received messages with heartbeat and data handling
+ * 
+ * Central message processing hub that handles both heartbeat responses and
+ * data messages. Any received message resets the heartbeat timeout, treating
+ * data messages as implicit heartbeat responses for efficiency.
+ * 
+ * @param msg Received and validated message structure
+ * 
+ * Processing flow:
+ * 1. Updates heartbeat timestamp (any message = alive peer)
+ * 2. Establishes connection if not already connected
+ * 3. Queues data messages for user consumption
+ * 4. Calls user callback if registered
+ * 5. Updates receive metrics
+ * 
+ * Message routing:
+ * - HEARTBEAT: Only updates connection state (no queuing)
+ * - DATA: Queued for recvData() and triggers callback
+ * 
+ * Thread safety: Uses recursive mutex for connection state updates
+ */
 void ESP32RemoteControl::onDataReceived(const RCMessage_t& msg) {
-  LOG("Received message of type: %d", msg.type);
+  LOG_DEBUG("Received message of type: %d", msg.type);
+  
+  // Update heartbeat timestamp for any received message (treat data messages as heartbeat responses)
+  if (xSemaphoreTakeRecursive(data_lock_, pdMS_TO_TICKS(5)) == pdTRUE) {
+    if (conn_state_ != RCConnectionState_t::CONNECTED) {
+      // If we didn't have a peer before, set the peer address to the sender's address
+      setPeerAddr(msg.from_addr);
+      conn_state_ = RCConnectionState_t::CONNECTED;
+      LOG("Peer set and connected!");
+    } 
+    // Reset heartbeat timer for any received message
+    last_heartbeat_rx_ms_ = millis();
+    xSemaphoreGive(data_lock_);
+  }
+  
   switch (msg.type) {
     case RCMSG_TYPE_HEARTBEAT:
-      onHeartbeatReceived(msg);
+      // Heartbeat messages are now handled above, no additional processing needed
       break;
     default:
-      setPeerAddr(msg.from_addr);
+      // Process data messages normally
       BaseType_t ok;
       if (fast_mode_) {
         // Assumes queue_recv_ length == 1
@@ -128,36 +259,55 @@ void ESP32RemoteControl::onDataReceived(const RCMessage_t& msg) {
         }
 
         if (ok != pdTRUE) {
-          LOG("[ERROR] Failed to enqueue message");
+          LOG_ERROR("Failed to enqueue message");
           recv_metrics_.err++;
         }
+      }
 
-        // If we successfully added the message, call the custom callback
-        // handler
+      // If we successfully added the message, call the custom callback
+      // handler and update metrics
+      if (ok == pdTRUE) {
         if (recv_callback_) recv_callback_(msg);
-          ++recv_metrics_.in;
-        }
+        recv_metrics_.addSuccess();  // Track successful message reception
+      } else {
+        recv_metrics_.addFailure();  // Track failed message reception
+      }
       break;
   }
 }
 
+/**
+ * @brief Legacy heartbeat handler (deprecated)
+ * 
+ * This method is kept for backward compatibility but no longer performs
+ * any operations. Heartbeat logic has been moved to onDataReceived() to
+ * treat any message as a heartbeat response, improving efficiency.
+ * 
+ * @param msg Heartbeat message (ignored)
+ * 
+ * @deprecated Heartbeat processing now integrated into onDataReceived()
+ */
 void ESP32RemoteControl::onHeartbeatReceived(const RCMessage_t& msg) {
-  if (xSemaphoreTakeRecursive(data_lock_, pdMS_TO_TICKS(5)) == pdTRUE) {
-    if (conn_state_ != RCConnectionState_t::CONNECTED) {
-      // If we didn't have a peer before, set the peer address to the sender's
-      // address
-      //memcpy(peer_addr_, msg.from_addr, RC_ADDR_SIZE);
-      setPeerAddr(msg.from_addr);
-      conn_state_ = RCConnectionState_t::CONNECTED;
-      LOG("Peer set and connected!");
-    } 
-
-    // reset heartbeat timer
-    last_heartbeat_rx_ms_ = millis();
-    xSemaphoreGive(data_lock_);
-  }
+  // Heartbeat logic is now handled in onDataReceived() for all message types
+  // This method is kept for compatibility but does nothing
 }
 
+/**
+ * @brief Monitor heartbeat timeout and update connection state
+ * 
+ * Called periodically by heartbeat timer to check if peer communication
+ * has timed out. If no messages received within timeout period, connection
+ * state is set to DISCONNECTED.
+ * 
+ * Timeout behavior:
+ * - Default timeout: 300ms (configurable via HEARTBEAT_TIMEOUT_MS)
+ * - ANY received message resets timeout counter
+ * - Only affects CONNECTED state (ignores CONNECTING/DISCONNECTED)
+ * 
+ * Called automatically by:
+ * - Heartbeat timer callback (every 100ms by default)
+ * - Should not be called directly by user code
+ */
 void ESP32RemoteControl::checkHeartbeat() {
   // Check if we received a heartbeat one time in the last
   // heartbeat_timeout_ms_ If not, we assume the connection is lost and set
@@ -170,26 +320,143 @@ void ESP32RemoteControl::checkHeartbeat() {
   }
 }
 
+/**
+ * @brief Set peer address for direct communication (legacy 6-byte interface)
+ * 
+ * Stores the peer's address for targeted communication. This is the legacy
+ * interface for 6-byte MAC addresses. Updates both legacy and generic addresses.
+ * 
+ * @param peer_addr Pointer to 6-byte address (typically MAC address)
+ *                  Must be valid pointer to RC_ADDR_SIZE bytes
+ * 
+ * Usage notes:
+ * - Called automatically when peer is discovered via heartbeat
+ * - Can be called manually to set known peer address
+ * - Protocol implementations may add validation and peer registration
+ * - Also updates generic address structure for consistency
+ */
 void ESP32RemoteControl::setPeerAddr(const uint8_t* peer_addr) {
   // Check if peer_addr is valid
-  memcpy(peer_addr_, peer_addr, RC_ADDR_SIZE);
+  if (peer_addr) {
+    memcpy(peer_addr_, peer_addr, RC_ADDR_SIZE);
+    // Also update generic address
+    peer_address_.setAddress(peer_addr, RC_ADDR_SIZE);
+  }
 }
 
+/**
+ * @brief Set peer address for direct communication (generic interface)
+ * 
+ * Modern interface supporting variable-length addresses for any protocol.
+ * Updates both generic and legacy address storage for compatibility.
+ * 
+ * @param peer_addr Generic address structure with protocol-specific data
+ * 
+ * Supported address types:
+ * - MAC addresses (6 bytes): ESPNOW, WiFi
+ * - BLE UUIDs (16 bytes): BLE GATT characteristics
+ * - NRF24 addresses (1-5 bytes): NRF24L01 protocol
+ * 
+ * Example usage:
+ *   // BLE UUID
+ *   uint8_t ble_uuid[16] = {0x12, 0x34, ...};
+ *   RCAddress_t addr(ble_uuid, 16);
+ *   controller->setPeerAddr(addr);
+ */
+void ESP32RemoteControl::setPeerAddr(const RCAddress_t& peer_addr) {
+  peer_address_ = peer_addr;
+  
+  // Update legacy address if size matches
+  if (peer_addr.size == RC_ADDR_SIZE) {
+    memcpy(peer_addr_, peer_addr.data, RC_ADDR_SIZE);
+  } else {
+    // Clear legacy address if size doesn't match
+    memset(peer_addr_, 0, RC_ADDR_SIZE);
+  }
+}
+
+/**
+ * @brief Clear peer address and return to discovery mode
+ * 
+ * Clears stored peer address, typically causing protocol to return to
+ * broadcast/discovery mode for communication. Clears both legacy and generic addresses.
+ * 
+ * Called automatically when:
+ * - Connection timeout occurs
+ * - Protocol-specific disconnection
+ * - Manual disconnection requested
+ */
 void ESP32RemoteControl::unsetPeerAddr() {
   memset(peer_addr_, 0, RC_ADDR_SIZE);
+  peer_address_.clear();
+}
+
+/**
+ * @brief Create protocol-specific broadcast address
+ * 
+ * Default implementation creates a 6-byte broadcast address (all 0xFF).
+ * Protocol implementations should override for protocol-specific broadcast.
+ * 
+ * @return Generic address structure with broadcast address
+ * 
+ * Protocol-specific examples:
+ * - ESPNOW/WiFi: FF:FF:FF:FF:FF:FF (6 bytes)
+ * - BLE: Service-specific UUID (16 bytes)
+ * - NRF24: 0xFF (1-5 bytes depending on configuration)
+ */
+RCAddress_t ESP32RemoteControl::createBroadcastAddress() const {
+  uint8_t broadcast[RC_ADDR_SIZE] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  return RCAddress_t(broadcast, RC_ADDR_SIZE);
 }
 
 // --- Heartbeat timer ISR ---
+/**
+ * @brief Static timer callback for heartbeat management
+ * 
+ * FreeRTOS timer callback that executes periodically to maintain connection.
+ * Sends heartbeat messages and monitors for peer timeouts.
+ * 
+ * @param xTimer FreeRTOS timer handle (contains instance pointer)
+ * 
+ * Operations performed:
+ * 1. Sends heartbeat message to peer
+ * 2. Checks for peer communication timeout
+ * 3. Updates connection state if timeout detected
+ * 
+ * Timing:
+ * - Called every 100ms by default (HEARTBEAT_INTERVAL_MS)
+ * - Timeout threshold: 300ms by default (HEARTBEAT_TIMEOUT_MS)
+ * 
+ * Note: This is a FreeRTOS callback - not called directly by user code
+ */
 void ESP32RemoteControl::heartbeatTimerCallback(TimerHandle_t xTimer) {
   ESP32RemoteControl* self = static_cast<ESP32RemoteControl*>(pvTimerGetTimerID(xTimer));
   if (self) {
-    //toggleGPIO(LED_BUILTIN);  // Toggle LED for heartbeat indication
     self->sendSysMsg(RCMSG_TYPE_HEARTBEAT);
     // check heartbeat status
     self->checkHeartbeat();
   }
 }
 
+/**
+ * @brief Send system control message (heartbeat, etc.)
+ * 
+ * Creates and sends protocol control messages like heartbeats.
+ * These messages maintain connection state but don't contain user data.
+ * 
+ * @param msgType Type of system message:
+ *   - RCMSG_TYPE_HEARTBEAT: Connection keep-alive
+ *   - Future: RCMSG_TYPE_ACK, RCMSG_TYPE_NACK, etc.
+ * 
+ * Message structure:
+ * - Type: Specified message type
+ * - From address: This device's address
+ * - Payload: Zeroed (no data for system messages)
+ * 
+ * Called automatically by:
+ * - Heartbeat timer for periodic keep-alives
+ * - Protocol implementations for control signaling
+ */
 void ESP32RemoteControl::sendSysMsg(const uint8_t msgType) {
   // Prepare system message with type and sender MAC
   RCMessage_t sysMsg = {};
@@ -199,6 +466,29 @@ void ESP32RemoteControl::sendSysMsg(const uint8_t msgType) {
   sendMsg(sysMsg);
 }
 
+/**
+ * @brief Queue message for transmission
+ * 
+ * Adds message to send queue and notifies background task for transmission.
+ * Behavior depends on fast_mode setting for different use cases.
+ * 
+ * @param msg Complete message structure to send
+ * @return true if successfully queued, false on queue full/error
+ * 
+ * Operating modes:
+ * - Normal mode (fast_mode=false): Queue up to 10 messages, blocks when full
+ * - Fast mode (fast_mode=true): Single message queue, overwrites previous
+ * 
+ * Example usage:
+ *   RCMessage_t msg = {};
+ *   msg.type = RCMSG_TYPE_DATA;
+ *   msg.setPayload(myData);
+ *   if (!controller->sendMsg(msg)) {
+ *     Serial.println("Send queue full!");
+ *   }
+ * 
+ * Thread safety: Queue operations are thread-safe via FreeRTOS
+ */
 bool ESP32RemoteControl::sendMsg(const RCMessage_t& msg) {
   if (fast_mode_) {
     // Fast mode: overwrite the queue with the new message
@@ -220,8 +510,30 @@ bool ESP32RemoteControl::sendMsg(const RCMessage_t& msg) {
   return true;
 }
 
-
-// Send a message
+/**
+ * @brief Receive queued message from protocol layer
+ * 
+ * Retrieves the next available message from the receive queue.
+ * Blocks briefly waiting for messages to arrive.
+ * 
+ * @param msg Reference to message structure to fill
+ * @return true if message received, false if timeout/no messages
+ * 
+ * Timeout behavior:
+ * - Waits up to 5ms for message arrival (RECV_MSG_TIMEOUT_MS)
+ * - Returns immediately if message already queued
+ * - Non-blocking after timeout expires
+ * 
+ * Example usage:
+ *   RCMessage_t msg;
+ *   if (controller->recvMsg(msg)) {
+ *     Serial.printf("Received type %d\n", msg.type);
+ *   }
+ * 
+ * Queue behavior:
+ * - Normal mode: Up to 10 messages queued (oldest dropped if full)
+ * - Fast mode: Single message (latest overwrites previous)
+ */
 bool ESP32RemoteControl::recvMsg(RCMessage_t& msg) {
   // Attempt to receive a message from the queue
   BaseType_t ok = xQueueReceive(queue_recv_, &msg, pdMS_TO_TICKS(RECV_MSG_TIMEOUT_MS));
@@ -234,6 +546,30 @@ bool ESP32RemoteControl::recvMsg(RCMessage_t& msg) {
   } 
 }  // recieve message
 
+/**
+ * @brief Send user data payload (simplified interface)
+ * 
+ * High-level interface for sending user data without dealing with
+ * message structure details. Automatically handles message formatting.
+ * 
+ * @param payload Data structure containing user information (25 bytes)
+ * @return true if successfully queued for transmission
+ * 
+ * Convenience wrapper that:
+ * 1. Creates RCMessage_t structure
+ * 2. Sets type to RCMSG_TYPE_DATA
+ * 3. Adds sender address
+ * 4. Copies payload data
+ * 5. Queues for transmission
+ * 
+ * Example usage:
+ *   RCPayload_t data = {};
+ *   data.value1 = 123.45f;
+ *   data.id1 = 42;
+ *   controller->sendData(data);
+ * 
+ * This is the preferred method for sending user data.
+ */
 bool ESP32RemoteControl::sendData(const RCPayload_t& payload) {
   RCMessage_t msg = {};
   msg.type = RCMSG_TYPE_DATA;  // Or any appropriate type for "data" messages
@@ -242,6 +578,30 @@ bool ESP32RemoteControl::sendData(const RCPayload_t& payload) {
   return sendMsg(msg);
 }
 
+/**
+ * @brief Receive user data payload (simplified interface)
+ * 
+ * High-level interface for receiving user data without dealing with
+ * message structure details. Filters out system messages automatically.
+ * 
+ * @param payload Reference to data structure to fill (25 bytes)
+ * @return true if data message received, false if no data available
+ * 
+ * Message filtering:
+ * - Only returns RCMSG_TYPE_DATA messages
+ * - Ignores heartbeat and other system messages
+ * - Extracts payload portion from message structure
+ * 
+ * Example usage:
+ *   RCPayload_t data;
+ *   if (controller->recvData(data)) {
+ *     Serial.printf("Received: %f\n", data.value1);
+ *   }
+ * 
+ * Timeout: Brief wait (5ms) for message arrival, then returns false
+ * 
+ * This is the preferred method for receiving user data.
+ */
 bool ESP32RemoteControl::recvData(RCPayload_t& payload) {
   RCMessage_t msg = {};
 
@@ -259,6 +619,31 @@ bool ESP32RemoteControl::recvData(RCPayload_t& payload) {
   return true;
 }
 
+/**
+ * @brief Background task for processing send queue
+ * 
+ * FreeRTOS task that runs continuously to process outgoing messages.
+ * Handles the actual transmission via protocol-specific lowLevelSend().
+ * 
+ * @param arg Pointer to ESP32RemoteControl instance (cast from void*)
+ * 
+ * Task behavior:
+ * 1. Blocks until notified of queued messages
+ * 2. Processes all available messages in queue
+ * 3. Calls protocol-specific lowLevelSend() for each message
+ * 4. Updates transmission metrics
+ * 5. Returns to blocking state until next notification
+ * 
+ * Performance optimization:
+ * - Batch processes multiple messages when available
+ * - Only wakes when messages are actually queued
+ * - Runs on APP_CPU_NUM core for optimal performance
+ * 
+ * Priority: 3 (configurable)
+ * Stack size: 4096 bytes
+ * 
+ * Note: This is a FreeRTOS task - not called directly by user code
+ */
 void ESP32RemoteControl::sendFromQueueLoop(void* arg) {
   auto* self = static_cast<ESP32RemoteControl*>(arg);  // Cast arg to class instance
 
@@ -269,10 +654,153 @@ void ESP32RemoteControl::sendFromQueueLoop(void* arg) {
     do {
       RCMessage_t msg;
       while (xQueueReceive(self->queue_send_, &msg, 0) == pdTRUE) {
-        LOG("Sending message of type %d", msg.type);
+        LOG_DEBUG("Sending message of type %d", msg.type);
         self->lowLevelSend(msg);
+        // Note: Actual success/failure tracking done in protocol-specific lowLevelSend()
+        // Legacy metric for compatibility
         self->send_metrics_.out++;
       }
     } while (ulTaskNotifyTake(pdTRUE, 0) > 0);
   }
+}
+
+/**
+ * @brief Print comprehensive metrics for protocol analysis
+ * 
+ * Displays real-time communication statistics including success rates,
+ * connection state, and performance metrics. Designed for protocol
+ * comparison and system health monitoring.
+ * 
+ * @param forceHeader If true, always print header regardless of line count
+ * 
+ * Output format:
+ * - Time: Seconds since startup
+ * - Protocol: ESPNOW/WIFI/BLE/NRF24
+ * - Conn: Connection state (CONN/DISC/CONN?/ERR)  
+ * - Send: Successful/Failed/Success rate %/Transactions per second
+ * - Recv: Successful/Failed/Success rate %/Transactions per second
+ * - Total: Cumulative sent/received counts
+ * 
+ * Example output:
+ *   Time(s) | Protocol | Conn | Send(OK/Fail/Rate/TPS) | Recv(OK/Fail/Rate/TPS) | Total(Sent/Recv)
+ *        45 |  ESPNOW  | CONN | 42/ 3/ 93%/12.3 | 38/ 0/100%/11.2 |   45/  38
+ * 
+ * When metrics are globally disabled, shows warning message every 5 seconds:
+ *   ⚠️  METRICS DISABLED - Use ESP32RemoteControl::enableGlobalMetrics(true) to enable
+ */
+void ESP32RemoteControl::printMetrics(bool forceHeader) {
+  unsigned long now = millis();
+  
+  // Check if metrics display is enabled and interval has elapsed
+  if (!forceHeader && metrics_display_enabled_) {
+    if (now - last_metrics_print_ms_ < metrics_interval_ms_) {
+      return;  // Not time to print yet
+    }
+    last_metrics_print_ms_ = now;
+  }
+  
+  // Check if global metrics are disabled
+  if (!RC_METRICS_ENABLED) {
+    // Print warning message periodically when metrics are disabled
+    static uint32_t last_warning_ms = 0;
+    if (now - last_warning_ms >= 5000) {  // Show warning every 5 seconds
+      last_warning_ms = now;
+      LOG("⚠️  METRICS DISABLED - Use ESP32RemoteControl::enableGlobalMetrics(true) to enable");
+    }
+    return;
+  }
+  
+  // Print header every 20 lines for readability or when forced
+  if (forceHeader || metrics_line_count_ % 20 == 0) {
+    LOG("=== Protocol Communication Metrics ===");
+    LOG("Time(s) | Protocol | Conn | Send(OK/Fail/Rate/TPS) | Recv(OK/Fail/Rate/TPS) | Total(Sent/Recv)");
+    LOG("--------|----------|------|------------------------|------------------------|------------------");
+    metrics_line_count_ = 0;
+  }
+  
+  // Get protocol name
+  const char* protocolName = "UNKNOWN";
+  switch (getProtocol()) {
+    case RC_PROTO_ESPNOW: protocolName = "ESPNOW"; break;
+    case RC_PROTO_WIFI: protocolName = "WIFI"; break;
+    case RC_PROTO_BLE: protocolName = "BLE"; break;
+    case RC_PROTO_NRF24: protocolName = "NRF24"; break;
+  }
+  
+  // Connection state string
+  const char* connState = "DISC";
+  switch (conn_state_) {
+    case RCConnectionState_t::CONNECTED: connState = "CONN"; break;
+    case RCConnectionState_t::CONNECTING: connState = "CONN?"; break;
+    case RCConnectionState_t::DISCONNECTED: connState = "DISC"; break;
+    case RCConnectionState_t::ERROR: connState = "ERR"; break;
+  }
+  
+  // Calculate transmission rates
+  float sendRate = send_metrics_.getTransactionRate();
+  float recvRate = recv_metrics_.getTransactionRate();
+  
+  // Print metrics with transmission rates
+  LOG("%7lu | %8s | %4s | %3lu/%3lu/%3.0f%%/%4.1f | %3lu/%3lu/%3.0f%%/%4.1f | %4lu/%4lu",
+      now / 1000,                           // Time in seconds
+      protocolName,                         // Protocol name
+      connState,                            // Connection state
+      send_metrics_.successful,             // Send successful
+      send_metrics_.failed,                 // Send failed  
+      send_metrics_.getSuccessRate(),       // Send success rate %
+      sendRate,                             // Send rate (TPS)
+      recv_metrics_.successful,             // Receive successful
+      recv_metrics_.failed,                 // Receive failed
+      recv_metrics_.getSuccessRate(),       // Receive success rate %
+      recvRate,                             // Receive rate (TPS)
+      send_metrics_.total,                  // Total sent
+      recv_metrics_.total                   // Total received
+  );
+  
+  metrics_line_count_++;
+}
+
+/**
+ * @brief Enable automatic metrics display with specified interval
+ * 
+ * Enables periodic metrics printing for continuous monitoring.
+ * Call this method once to start automatic metrics display,
+ * then call printMetrics() regularly in your main loop.
+ * 
+ * @param enable True to enable automatic display, false to disable
+ * @param interval_ms Display interval in milliseconds (default: 1000ms)
+ * 
+ * Usage example:
+ *   controller->enableMetricsDisplay(true, 2000);  // Print every 2 seconds
+ *   // In main loop:
+ *   controller->printMetrics();  // Will print based on interval
+ */
+void ESP32RemoteControl::enableMetricsDisplay(bool enable, uint32_t interval_ms) {
+  metrics_display_enabled_ = enable;
+  metrics_interval_ms_ = interval_ms;
+  if (enable) {
+    last_metrics_print_ms_ = millis();  // Reset timer
+    LOG("Metrics display enabled (interval: %lu ms, protocol: %d)", interval_ms, getProtocol());
+  } else {
+    LOG("Metrics display disabled");
+  }
+}
+
+/**
+ * @brief Enable or disable global metrics calculation
+ * 
+ * Controls whether metrics are calculated across all controller instances.
+ * When disabled, all metrics operations become no-ops for performance.
+ * 
+ * @param enable True to enable metrics calculation, false to disable
+ * 
+ * Usage example:
+ *   ESP32RemoteControl::enableGlobalMetrics(true);   // Enable metrics
+ *   ESP32RemoteControl::disableGlobalMetrics();      // Disable metrics
+ * 
+ * Note: This affects all controller instances globally
+ */
+void ESP32RemoteControl::enableGlobalMetrics(bool enable) {
+  RC_METRICS_ENABLED = enable;
+  LOG("Global metrics calculation %s", enable ? "ENABLED" : "DISABLED");
 }

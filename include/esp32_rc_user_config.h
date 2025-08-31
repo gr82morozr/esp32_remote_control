@@ -5,7 +5,7 @@
 */
 
 
-#define CURRENT_LOG_LEVEL 1
+#define CURRENT_LOG_LEVEL 3
 
 // =======================================================
 // Common Hardware Pins (used on both sides)
