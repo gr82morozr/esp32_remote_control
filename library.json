@@ -1,6 +1,30 @@
 {
   "name": "esp32_remote_control",
-  "version": "0.0.0+20250710204428",
+  "version": "1.0.0-beta.1",
+  "description": "Symmetric wireless communication library for ESP32 supporting ESP-NOW, and nRF24L01+ protocols with automatic peer discovery",
+  "keywords": [
+    "esp32",
+    "wireless",
+    "remote-control",
+    "esp-now",
+    "nrf24l01",
+    "communication",
+    "iot",
+    "peer-discovery",
+    "symmetric"
+  ],
+  "authors": [
+    {
+      "name": "gr82morozr",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git", 
+    "url": "https://github.com/gr82morozr/esp32_remote_control.git"
+  },
+  "homepage": "https://github.com/gr82morozr/esp32_remote_control",
   "frameworks": ["arduino"],
   "platforms": ["espressif32"],
   "dependencies": [
@@ -9,12 +33,37 @@
       "repository": {
         "type": "git",
         "url": "https://github.com/gr82morozr/esp32-common.git"
-      }
+      },
+      "version": ">=0.1.0"
     },
     {
       "name": "RF24",
       "owner": "nrf24",
       "version": "^1.4.11"
+    }
+  ],
+  "build": {
+    "libLDFMode": "deep+"
+  },
+  "export": {
+    "include": [
+      "include/*"
+    ],
+    "exclude": [
+      "examples/*",
+      "test/*", 
+      "docs/*",
+      "*.md"
+    ]
+  },
+  "examples": [
+    {
+      "name": "Basic ESP-NOW",
+      "base": "examples/basic_espnow.cpp"
+    },
+    {
+      "name": "Basic nRF24L01+",
+      "base": "examples/basic_nrf24.cpp"
     }
   ]
 }
