@@ -20,14 +20,14 @@ class ESP32_RC_ESPNOW : public ESP32RemoteControl {
   
   // Address handling overrides
   uint8_t getAddressSize() const override { return RC_ADDR_SIZE; }  // ESP-NOW uses MAC addresses
-  RCAddress_t createBroadcastAddress() const override;
+  void createBroadcastAddress(RCAddress_t& broadcast_addr) const override;
  
 
  protected:
   // adding ESPNOW specific paring steps
   void lowLevelSend(const RCMessage_t& msg) override;
   void setPeerAddr(const uint8_t* peer_addr) override;
-  void setPeerAddr(const RCAddress_t& peer_addr) override;
+  // Using base class setPeerAddr implementation
   void unsetPeerAddr() override;
   RCMessage_t parseRawData(const uint8_t* data, size_t len) override;  // Unified interface from base class
 

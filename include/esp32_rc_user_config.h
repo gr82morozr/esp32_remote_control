@@ -9,6 +9,49 @@
  */
 
 // =======================================================
+// UNIFIED PROTOCOL SELECTION
+// =======================================================
+
+// Protocol constants (must be defined before use)
+#define RC_PROTO_ESPNOW   0
+#define RC_PROTO_WIFI     1
+#define RC_PROTO_BLE      2
+#define RC_PROTO_NRF24    3
+
+/**
+ * Single macro to control which protocol to use
+ * Only the selected protocol will be compiled, reducing code size and memory usage
+ * 
+ * Available protocols:
+ * - RC_PROTO_ESPNOW  : ESP-NOW protocol
+ * - RC_PROTO_NRF24   : NRF24L01+ protocol  
+ * - RC_PROTO_WIFI    : WiFi Raw 802.11 protocol
+ * - RC_PROTO_BLE     : BLE protocol (future)
+ * 
+ * To use specific protocol in your code:
+ * 1. Define BEFORE including any headers:
+ *    #define ESP32_RC_PROTOCOL RC_PROTO_WIFI
+ *    #include "esp32_rc_factory.h"
+ * 
+ * 2. Or change the default below:
+ *    #define ESP32_RC_PROTOCOL RC_PROTO_NRF24
+ */
+#ifndef ESP32_RC_PROTOCOL
+#define ESP32_RC_PROTOCOL RC_PROTO_ESPNOW    // Default: ESP-NOW protocol
+#endif
+
+// Automatic enable/disable based on selected protocol
+#if ESP32_RC_PROTOCOL == RC_PROTO_ESPNOW
+    #define ENABLE_ESP32_RC_ESPNOW
+#elif ESP32_RC_PROTOCOL == RC_PROTO_NRF24
+    #define ENABLE_ESP32_RC_NRF24
+#elif ESP32_RC_PROTOCOL == RC_PROTO_WIFI
+    #define ENABLE_ESP32_RC_WIFI
+#elif ESP32_RC_PROTOCOL == RC_PROTO_BLE
+    #define ENABLE_ESP32_RC_BLE
+#endif
+
+// =======================================================
 // LOGGING CONFIGURATION
 // =======================================================
 /**

@@ -4,7 +4,7 @@
 int ESP32RemoteControl::metrics_line_count_ = 0;
 
 // Global metrics configuration (default enabled)
-bool RC_METRICS_ENABLED = true;
+bool rc_metrics_enabled = true;
 
 /**
  * @brief Constructor for ESP32RemoteControl base class
@@ -34,9 +34,9 @@ ESP32RemoteControl::ESP32RemoteControl(bool fast_mode) : fast_mode_(fast_mode) {
   conn_state_ = RCConnectionState_t::DISCONNECTED;
   memset(peer_addr_, 0, RC_ADDR_SIZE);
   
-  // Initialize generic addresses
-  peer_address_.clear();
-  my_address_.clear();
+  // Initialize generic addresses (simplified)
+  memset(peer_address_, 0, RC_ADDR_SIZE);
+  memset(my_address_, 0, RC_ADDR_SIZE);
 
 
 
@@ -79,17 +79,17 @@ ESP32RemoteControl::ESP32RemoteControl(bool fast_mode) : fast_mode_(fast_mode) {
       "SendTask", 4096,
       this,  // Pass the instance
       3, 
-      &sendFromQueueTaskHandle, 
+      &sendFromQueueTaskHandle_, 
       APP_CPU_NUM
   );
 
   LOG("SendFromQueueTask created.");
 
-  if (sendFromQueueTaskHandle == nullptr) {
+  if (sendFromQueueTaskHandle_ == nullptr) {
     LOG_ERROR("Failed to create SendFromQueueTask");
     SYS_HALT;
   } else {
-    xTaskNotifyGive(sendFromQueueTaskHandle); // Notify the task to start immediately
+    xTaskNotifyGive(sendFromQueueTaskHandle_); // Notify the task to start immediately
   }
   LOG("Initialization complete.");
 }
@@ -250,7 +250,7 @@ void ESP32RemoteControl::onDataReceived(const RCMessage_t& msg) {
   if (xSemaphoreTakeRecursive(data_lock_, pdMS_TO_TICKS(5)) == pdTRUE) {
     if (conn_state_ != RCConnectionState_t::CONNECTED) {
       // If we didn't have a peer before, set the peer address to the sender's address
-      setPeerAddr(msg.from_addr);
+      setPeerAddr((const uint8_t*)msg.from_addr);
       conn_state_ = RCConnectionState_t::CONNECTED;
       LOG("Peer set and connected!");
     } 
@@ -282,7 +282,7 @@ void ESP32RemoteControl::onDataReceived(const RCMessage_t& msg) {
 
         if (ok != pdTRUE) {
           LOG_ERROR("Failed to enqueue message");
-          recv_metrics_.err++;
+          recv_metrics_.addFailure();
         }
       }
 
@@ -311,8 +311,9 @@ void ESP32RemoteControl::onDataReceived(const RCMessage_t& msg) {
  */
 void ESP32RemoteControl::onPeerDiscovered(const RCAddress_t& addr, const char* info) {
   if (xSemaphoreTakeRecursive(data_lock_, pdMS_TO_TICKS(5)) == pdTRUE) {
-    // Update discovery result
-    discovery_result_.setDiscovered(addr, info);
+    // Update discovery result (simplified)
+    discovery_result_.discovered = true;
+    memcpy(discovery_result_.peer_addr, addr, RC_ADDR_SIZE);
     
     xSemaphoreGiveRecursive(data_lock_);
     
@@ -321,7 +322,7 @@ void ESP32RemoteControl::onPeerDiscovered(const RCAddress_t& addr, const char* i
       discovery_callback_(discovery_result_);
     }
     
-    LOG_INFO("[Discovery] Peer discovered: %s", info ? info : "No additional info");
+    LOG_INFO("[Discovery] Peer discovered");
   } else {
     LOG_ERROR("[Discovery] Failed to acquire lock for discovery update");
   }
@@ -391,7 +392,7 @@ void ESP32RemoteControl::setPeerAddr(const uint8_t* peer_addr) {
   if (peer_addr) {
     memcpy(peer_addr_, peer_addr, RC_ADDR_SIZE);
     // Also update generic address
-    peer_address_.setAddress(peer_addr, RC_ADDR_SIZE);
+    memcpy(peer_address_, peer_addr, RC_ADDR_SIZE);
   }
 }
 
@@ -409,21 +410,14 @@ void ESP32RemoteControl::setPeerAddr(const uint8_t* peer_addr) {
  * - NRF24 addresses (1-5 bytes): NRF24L01 protocol
  * 
  * Example usage:
- *   // BLE UUID
- *   uint8_t ble_uuid[16] = {0x12, 0x34, ...};
- *   RCAddress_t addr(ble_uuid, 16);
+ *   // MAC address
+ *   RCAddress_t addr = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
  *   controller->setPeerAddr(addr);
  */
 void ESP32RemoteControl::setPeerAddr(const RCAddress_t& peer_addr) {
-  peer_address_ = peer_addr;
-  
-  // Update legacy address if size matches
-  if (peer_addr.size == RC_ADDR_SIZE) {
-    memcpy(peer_addr_, peer_addr.data, RC_ADDR_SIZE);
-  } else {
-    // Clear legacy address if size doesn't match
-    memset(peer_addr_, 0, RC_ADDR_SIZE);
-  }
+  // Copy address data (simplified)
+  memcpy(peer_address_, peer_addr, RC_ADDR_SIZE);
+  memcpy(peer_addr_, peer_addr, RC_ADDR_SIZE);
 }
 
 /**
@@ -439,7 +433,7 @@ void ESP32RemoteControl::setPeerAddr(const RCAddress_t& peer_addr) {
  */
 void ESP32RemoteControl::unsetPeerAddr() {
   memset(peer_addr_, 0, RC_ADDR_SIZE);
-  peer_address_.clear();
+  memset(peer_address_, 0, RC_ADDR_SIZE);
 }
 
 /**
@@ -455,9 +449,9 @@ void ESP32RemoteControl::unsetPeerAddr() {
  * - BLE: Service-specific UUID (16 bytes)
  * - NRF24: 0xFF (1-5 bytes depending on configuration)
  */
-RCAddress_t ESP32RemoteControl::createBroadcastAddress() const {
-  uint8_t broadcast[RC_ADDR_SIZE] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-  return RCAddress_t(broadcast, RC_ADDR_SIZE);
+void ESP32RemoteControl::createBroadcastAddress(RCAddress_t& broadcast_addr) const {
+  static const uint8_t broadcast[RC_ADDR_SIZE] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  memcpy(broadcast_addr, broadcast, RC_ADDR_SIZE);
 }
 
 // --- Heartbeat timer ISR ---
@@ -557,7 +551,7 @@ bool ESP32RemoteControl::sendMsg(const RCMessage_t& msg) {
     }
   }
   // Notify the task to send the message immediately
-  xTaskNotifyGive(sendFromQueueTaskHandle);
+  xTaskNotifyGive(sendFromQueueTaskHandle_);
   return true;
 }
 
@@ -708,8 +702,8 @@ void ESP32RemoteControl::sendFromQueueLoop(void* arg) {
         LOG_DEBUG("Sending message of type %d", msg.type);
         self->lowLevelSend(msg);
         // Note: Actual success/failure tracking done in protocol-specific lowLevelSend()
-        // Legacy metric for compatibility
-        self->send_metrics_.out++;
+        // Update send metrics
+        self->send_metrics_.addSuccess();
       }
     } while (ulTaskNotifyTake(pdTRUE, 0) > 0);
   }
@@ -751,7 +745,7 @@ void ESP32RemoteControl::printMetrics(bool forceHeader) {
   }
   
   // Check if global metrics are disabled
-  if (!RC_METRICS_ENABLED) {
+  if (!rc_metrics_enabled) {
     // Print warning message periodically when metrics are disabled
     static uint32_t last_warning_ms = 0;
     if (now - last_warning_ms >= 5000) {  // Show warning every 5 seconds
@@ -792,7 +786,7 @@ void ESP32RemoteControl::printMetrics(bool forceHeader) {
   float recvRate = recv_metrics_.getTransactionRate();
   
   // Print metrics with transmission rates
-  LOG("%7lu | %8s | %4s | %3lu/%3lu/%3.0f%%/%4.1f | %3lu/%3lu/%3.0f%%/%4.1f | %4lu/%4lu",
+  LOG("%7lu | %8s | %4s | %3u/%3u/%3.0f%%/%4.1f | %3u/%3u/%3.0f%%/%4.1f | %4u/%4u",
       now / 1000,                           // Time in seconds
       protocolName,                         // Protocol name
       connState,                            // Connection state
@@ -804,8 +798,8 @@ void ESP32RemoteControl::printMetrics(bool forceHeader) {
       recv_metrics_.failed,                 // Receive failed
       recv_metrics_.getSuccessRate(),       // Receive success rate %
       recvRate,                             // Receive rate (TPS)
-      send_metrics_.total,                  // Total sent
-      recv_metrics_.total                   // Total received
+      send_metrics_.getTotal(),             // Total sent
+      recv_metrics_.getTotal()              // Total received
   );
   
   metrics_line_count_++;
@@ -852,6 +846,6 @@ void ESP32RemoteControl::enableMetricsDisplay(bool enable, uint32_t interval_ms)
  * Note: This affects all controller instances globally
  */
 void ESP32RemoteControl::enableGlobalMetrics(bool enable) {
-  RC_METRICS_ENABLED = enable;
+  rc_metrics_enabled = enable;
   LOG("Global metrics calculation %s", enable ? "ENABLED" : "DISABLED");
 }

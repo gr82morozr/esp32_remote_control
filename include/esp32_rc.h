@@ -61,7 +61,7 @@ class ESP32RemoteControl {
   // Global metrics control
   static void enableGlobalMetrics(bool enable = true);
   static void disableGlobalMetrics() { enableGlobalMetrics(false); }
-  static bool isGlobalMetricsEnabled() { return RC_METRICS_ENABLED; }
+  static bool isGlobalMetricsEnabled() { return rc_metrics_enabled; }
   
   // Metrics display and analysis
   void printMetrics(bool forceHeader = false);
@@ -90,13 +90,13 @@ class ESP32RemoteControl {
 
   // Set or unset the peer address for communication
   virtual void setPeerAddr(const uint8_t* peer_addr);  // Legacy interface (6-byte MAC)
-  virtual void setPeerAddr(const RCAddress_t& peer_addr);  // Generic interface
+  void setPeerAddr(const RCAddress_t& peer_addr);  // Simplified interface
   // Unset the peer address, typically called on disconnect
   virtual void unsetPeerAddr();
   
   // Get protocol-specific address sizes
   virtual uint8_t getAddressSize() const { return RC_ADDR_SIZE; }  // Default: MAC address size
-  virtual RCAddress_t createBroadcastAddress() const;  // Protocol-specific broadcast address
+  virtual void createBroadcastAddress(RCAddress_t& broadcast_addr) const;  // Protocol-specific broadcast address
 
   // Default connection state
   RCConnectionState_t conn_state_ = RCConnectionState_t::DISCONNECTED;
@@ -118,12 +118,12 @@ class ESP32RemoteControl {
   const uint32_t heartbeat_timeout_ms_ = HEARTBEAT_TIMEOUT_MS;
   uint32_t last_heartbeat_rx_ms_ = 0;
 
-  // Address handling - both legacy and generic
+  // Address handling - simplified
   uint8_t peer_addr_[RC_ADDR_SIZE] = {0};  // Legacy 6-byte peer address (for compatibility)
   uint8_t my_addr_[RC_ADDR_SIZE] = {0};    // Legacy 6-byte my address (for compatibility)
   
-  RCAddress_t peer_address_;  // Generic peer address
-  RCAddress_t my_address_;    // Generic my address
+  RCAddress_t peer_address_;  // Simplified peer address
+  RCAddress_t my_address_;    // Simplified my address
 
   // Metrics for send/receive operations
   Metrics_t send_metrics_{}, recv_metrics_{};
@@ -143,7 +143,7 @@ class ESP32RemoteControl {
   RCDiscoveryResult_t discovery_result_;
 
   // Task handle for the sendFromQueue loop
-  TaskHandle_t sendFromQueueTaskHandle = nullptr;
+  TaskHandle_t sendFromQueueTaskHandle_ = nullptr;
   static void heartbeatTimerCallback(TimerHandle_t xTimer);
   static void sendFromQueueLoop(void* arg);
 };

@@ -18,12 +18,12 @@ class ESP32_RC_NRF24 : public ESP32RemoteControl {
   
   // Address handling overrides
   uint8_t getAddressSize() const override { return 5; }  // NRF24 uses 5-byte addresses
-  RCAddress_t createBroadcastAddress() const override;
+  void createBroadcastAddress(RCAddress_t& broadcast_addr) const override;
 
 protected:
   void lowLevelSend(const RCMessage_t& msg) override;
   void setPeerAddr(const uint8_t* peer_addr) override;
-  void setPeerAddr(const RCAddress_t& peer_addr) override;
+  // Using base class setPeerAddr implementation
   void unsetPeerAddr() override;
   RCMessage_t parseRawData(const uint8_t* data, size_t len) override;
   void checkHeartbeat() override;

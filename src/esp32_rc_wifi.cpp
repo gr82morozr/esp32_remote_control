@@ -19,7 +19,7 @@ ESP32_RC_WIFI::ESP32_RC_WIFI(bool fast_mode) : ESP32RemoteControl(fast_mode) {
     uint8_t mac[6];
     WiFi.macAddress(mac);
     memcpy(my_addr_, mac, 6);
-    my_address_.setAddress(my_addr_, 6);
+    memcpy(my_address_, my_addr_, RC_ADDR_SIZE);
     
     // Calculate priority for role negotiation
     node_priority_ = calculatePriority();
@@ -483,8 +483,7 @@ bool ESP32_RC_WIFI::listenForUDPHandshake() {
             LOG("[STEP1] ✅ Peer handshake - IP: %s", formatIP(peer_ip_).c_str());
             
             // Notify base class
-            uint8_t ip_bytes[4] = {peer_ip_[0], peer_ip_[1], peer_ip_[2], peer_ip_[3]};
-            RCAddress_t peer_addr(ip_bytes, 4);
+            RCAddress_t peer_addr = {peer_ip_[0], peer_ip_[1], peer_ip_[2], peer_ip_[3], 0, 0};
             String ip_info = formatIP(peer_ip_);
             onPeerDiscovered(peer_addr, ip_info.c_str());
             
@@ -535,21 +534,16 @@ void ESP32_RC_WIFI::setPeerAddr(const uint8_t* peer_addr) {
     }
 }
 
-void ESP32_RC_WIFI::setPeerAddr(const RCAddress_t& peer_addr) {
-    if (peer_addr.size >= 4) {
-        peer_ip_ = IPAddress(peer_addr.data[0], peer_addr.data[1], 
-                           peer_addr.data[2], peer_addr.data[3]);
-    }
-}
+// Using base class implementation for setPeerAddr
 
 void ESP32_RC_WIFI::unsetPeerAddr() {
     peer_ip_ = IPAddress(0, 0, 0, 0);
     memset(peer_mac_, 0, 6);
 }
 
-RCAddress_t ESP32_RC_WIFI::createBroadcastAddress() const {
-    uint8_t broadcast[4] = {255, 255, 255, 255};
-    return RCAddress_t(broadcast, 4);
+void ESP32_RC_WIFI::createBroadcastAddress(RCAddress_t& broadcast_addr) const {
+    uint8_t broadcast[RC_ADDR_SIZE] = {255, 255, 255, 255, 0, 0};
+    memcpy(broadcast_addr, broadcast, RC_ADDR_SIZE);
 }
 
 // ========== Utility Functions ==========

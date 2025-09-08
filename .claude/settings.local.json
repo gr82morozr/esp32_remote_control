@@ -63,7 +63,11 @@
       "Read(/D:\\projects.git\\esp32_remote_control\\src/**)",
       "Read(/D:\\projects.git\\esp32_remote_control\\src/**)",
       "Read(/D:\\projects.git\\esp32_remote_control\\src/**)",
-      "Read(/D:\\projects.git\\esp32_remote_control\\src/**)"
+      "Read(/D:\\projects.git\\esp32_remote_control\\src/**)",
+      "Bash(move:*)",
+      "Bash(chmod:*)",
+      "Bash(\"C:\\Users\\gr82m\\.platformio\\penv\\Scripts\\pio.exe\" run --target clean)",
+      "Bash(\"C:\\Users\\gr82m\\.platformio\\penv\\Scripts\\pio.exe\" run -v)"
     ],
     "deny": [],
     "ask": []

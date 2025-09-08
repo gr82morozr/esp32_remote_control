@@ -16,13 +16,10 @@
 
 
 
-// ========== Protocol Selection Enum ==========
-enum RCProtocol_t {
-  RC_PROTO_ESPNOW   = 0,
-  RC_PROTO_WIFI     = 1,
-  RC_PROTO_BLE      = 2,
-  RC_PROTO_NRF24    = 3
-};
+// ========== Protocol Selection Type ==========
+// Protocol constants are defined in esp32_rc_user_config.h as #define values
+// Use int instead of enum for compatibility with #define constants
+typedef int RCProtocol_t;
 
 // Helper function to convert protocol enum to string
 inline const char* protocolToString(RCProtocol_t protocol) {
@@ -140,67 +137,9 @@ struct RCMessage_t {
 static_assert(sizeof(RCPayload_t) == RC_PAYLOAD_MAX_SIZE,   "RCPayload_t must be 21 bytes");
 static_assert(sizeof(RCMessage_t) == RC_MESSAGE_MAX_SIZE,   "RCMessage_t must be 32 bytes");
 
-// ========== Address Abstraction ==========
-/**
- * @brief Generic address structure for all protocols
- */
-struct RCAddress_t {
-  uint8_t data[RC_MAX_ADDR_SIZE];  // Address data (protocol-specific format)
-  uint8_t size;                    // Actual size of address (1-16 bytes)
-  
-  // Constructor for empty address
-  RCAddress_t() : size(0) { 
-    memset(data, 0, RC_MAX_ADDR_SIZE); 
-  }
-  
-  // Constructor from byte array
-  RCAddress_t(const uint8_t* addr, uint8_t addr_size) {
-    setAddress(addr, addr_size);
-  }
-  
-  // Set address data
-  void setAddress(const uint8_t* addr, uint8_t addr_size) {
-    if (addr && addr_size > 0 && addr_size <= RC_MAX_ADDR_SIZE) {
-      size = addr_size;
-      memcpy(data, addr, addr_size);
-      // Zero remaining bytes for consistency
-      if (addr_size < RC_MAX_ADDR_SIZE) {
-        memset(data + addr_size, 0, RC_MAX_ADDR_SIZE - addr_size);
-      }
-    } else {
-      clear();
-    }
-  }
-  
-  // Clear address
-  void clear() {
-    size = 0;
-    memset(data, 0, RC_MAX_ADDR_SIZE);
-  }
-  
-  // Check if address is valid/set
-  bool isValid() const {
-    return (size > 0 && size <= RC_MAX_ADDR_SIZE);
-  }
-  
-  // Check if address is broadcast/empty
-  bool isBroadcast() const {
-    if (!isValid()) return false;
-    for (uint8_t i = 0; i < size; i++) {
-      if (data[i] != 0xFF) return false;
-    }
-    return true;
-  }
-  
-  // Comparison operators
-  bool operator==(const RCAddress_t& other) const {
-    return (size == other.size && memcmp(data, other.data, size) == 0);
-  }
-  
-  bool operator!=(const RCAddress_t& other) const {
-    return !(*this == other);
-  }
-};
+// ========== Simplified Address Handling ==========
+// Use simple 6-byte MAC addresses for all protocols (standard for ESP32)
+typedef uint8_t RCAddress_t[RC_ADDR_SIZE];
 
 // ========== Broadcast/Null MAC (Legacy) ==========
 #define RC_BROADCAST_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
@@ -216,70 +155,81 @@ struct RCAddress_t {
 #endif
 
 // ========== Global Metrics Configuration ==========
-extern bool RC_METRICS_ENABLED;  // Global flag to enable/disable metrics calculation
+extern bool rc_metrics_enabled;  // Global flag to enable/disable metrics calculation
 
-// ========== Metrics Struct (for statistics/debug) ==========
+// ========== Lightweight Metrics with Sliding Window TPS ==========
 struct Metrics_t {
-  unsigned long successful = 0;    // Successfully sent/received messages
-  unsigned long failed = 0;        // Failed send/receive attempts
-  unsigned long total = 0;         // Total attempts (successful + failed)
+  uint16_t successful = 0;  // Successfully sent/received messages  
+  uint16_t failed = 0;      // Failed send/receive attempts
   
-  // Rate calculation support
-  unsigned long start_time_ms = 0; // When metrics started tracking
-  unsigned long last_reset_ms = 0; // When metrics were last reset
+  // Circular buffer for last 5 seconds of activity (1 entry per 100ms = 50 entries)
+  static const uint8_t WINDOW_SLOTS = 50;  // 5 seconds ÷ 100ms
+  mutable uint8_t activity_buffer[WINDOW_SLOTS] = {0};  // Count per 100ms slot
+  mutable uint8_t current_slot = 0;
+  mutable uint32_t last_slot_update_ms = 0;
   
-  // Legacy compatibility
-  unsigned long in = 0;            // Deprecated - use successful for receive metrics
-  unsigned long out = 0;           // Deprecated - use successful for send metrics
-  unsigned long err = 0;           // Deprecated - use failed
-  
-  // Constructor
-  Metrics_t() {
-    unsigned long now = millis();
-    start_time_ms = now;
-    last_reset_ms = now;
+  inline void addSuccess() { 
+    if (rc_metrics_enabled) {
+      successful++; 
+      recordActivity();
+    }
+  }
+  inline void addFailure() { 
+    if (rc_metrics_enabled) {
+      failed++; 
+      recordActivity();
+    }
+  }
+  inline void reset() { 
+    successful = failed = 0;
+    memset(activity_buffer, 0, sizeof(activity_buffer));
+    current_slot = 0;
+    last_slot_update_ms = millis();
+  }
+  inline uint16_t getTotal() const { return successful + failed; }
+  inline float getSuccessRate() const { 
+    uint16_t total = getTotal();
+    return total ? (successful * 100.0f / total) : 0.0f; 
+  }
+  inline float getTransactionRate() const {
+    updateSlots();  // Ensure buffer is current
+    
+    // Sum all activity in the last 5 seconds
+    uint16_t total_in_window = 0;
+    for (uint8_t i = 0; i < WINDOW_SLOTS; i++) {
+      total_in_window += activity_buffer[i];
+    }
+    
+    // Convert to transactions per second (5 second window)
+    return total_in_window / 5.0f;
   }
   
-  // Reset all counters
-  void reset() {
-    successful = failed = total = 0;
-    in = out = err = 0;
-    last_reset_ms = millis();
+private:
+  inline void recordActivity() {
+    updateSlots();
+    
+    // Increment current slot (max 255 per 100ms slot)
+    if (activity_buffer[current_slot] < 255) {
+      activity_buffer[current_slot]++;
+    }
   }
   
-  // Calculate success rate (0-100%)
-  float getSuccessRate() const {
-    return (total > 0) ? (successful * 100.0f / total) : 0.0f;
-  }
-  
-  // Calculate transmission rate (transactions per second)
-  float getTransactionRate() const {
-    unsigned long elapsed_ms = millis() - start_time_ms;
-    if (elapsed_ms < 1000) return 0.0f;  // Need at least 1 second of data
-    return (total * 1000.0f) / elapsed_ms;
-  }
-  
-  // Calculate success rate (successful transactions per second)
-  float getSuccessRate_TPS() const {
-    unsigned long elapsed_ms = millis() - start_time_ms;
-    if (elapsed_ms < 1000) return 0.0f;  // Need at least 1 second of data
-    return (successful * 1000.0f) / elapsed_ms;
-  }
-  
-  // Add successful operation
-  void addSuccess() {
-    if (!RC_METRICS_ENABLED) return;  // Skip if metrics disabled
-    successful++;
-    total++;
-    out++; // Legacy compatibility
-  }
-  
-  // Add failed operation
-  void addFailure() {
-    if (!RC_METRICS_ENABLED) return;  // Skip if metrics disabled
-    failed++;
-    total++;
-    err++; // Legacy compatibility
+  inline void updateSlots() const {
+    uint32_t now = millis();
+    uint32_t elapsed = now - last_slot_update_ms;
+    
+    // Move to next slot every 100ms
+    if (elapsed >= 100) {
+      uint8_t slots_to_advance = elapsed / 100;
+      
+      // Clear old slots and advance
+      for (uint8_t i = 0; i < slots_to_advance && i < WINDOW_SLOTS; i++) {
+        current_slot = (current_slot + 1) % WINDOW_SLOTS;
+        activity_buffer[current_slot] = 0;  // Clear new slot
+      }
+      
+      last_slot_update_ms = now;
+    }
   }
 };
 
@@ -291,32 +241,10 @@ enum class RCConnectionState_t : uint8_t {
   ERROR = 3
 };
 
-// ========== Discovery Result Structure ==========
+// ========== Simple Discovery ==========
 struct RCDiscoveryResult_t {
-  bool discovered;                    // True if peer was discovered
-  RCAddress_t peer_address;          // Discovered peer address
-  unsigned long discovery_time_ms;   // When peer was discovered
-  char info[32];                     // Protocol-specific info (e.g., IP address string)
-  
-  RCDiscoveryResult_t() : discovered(false), discovery_time_ms(0) {
-    info[0] = 0;  // Empty string
-  }
-  
-  void setDiscovered(const RCAddress_t& addr, const char* additional_info = nullptr) {
-    discovered = true;
-    peer_address = addr;
-    discovery_time_ms = millis();
-    if (additional_info) {
-      RC_SAFE_STRCPY(info, additional_info, sizeof(info));
-    }
-  }
-  
-  void clear() {
-    discovered = false;
-    peer_address.clear();
-    discovery_time_ms = 0;
-    info[0] = 0;
-  }
+  bool discovered = false;       // True if peer was discovered  
+  uint8_t peer_addr[RC_ADDR_SIZE] = {0}; // Discovered peer MAC address
 };
 
 
@@ -325,5 +253,3 @@ struct RCDiscoveryResult_t {
 
 
 // ==============================================
-
-

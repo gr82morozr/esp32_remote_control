@@ -53,7 +53,7 @@ public:
     
     // Address handling for WiFi (uses IP addresses)
     uint8_t getAddressSize() const override { return 4; }
-    RCAddress_t createBroadcastAddress() const override;
+    void createBroadcastAddress(RCAddress_t& broadcast_addr) const override;
 
 protected:
     // Required base class implementations
@@ -61,7 +61,7 @@ protected:
     RCMessage_t parseRawData(const uint8_t* data, size_t len) override;
     void checkHeartbeat() override;
     void setPeerAddr(const uint8_t* peer_addr) override;
-    void setPeerAddr(const RCAddress_t& peer_addr) override;
+    // Using base class setPeerAddr implementation
     void unsetPeerAddr() override;
 
 private:

@@ -65,7 +65,7 @@ bool ESP32_RC_ESPNOW::init() {
 
     // Get my MAC address
     WiFi.macAddress(my_addr_);  // Get my MAC address
-    my_address_.setAddress(my_addr_, RC_ADDR_SIZE);  // Also set generic address
+    memcpy(my_address_, my_addr_, RC_ADDR_SIZE);  // Also set generic address
 
     // Always add broadcast peer so send always works
     esp_now_peer_info_t peerInfo = {};
@@ -212,16 +212,7 @@ void ESP32_RC_ESPNOW::setPeerAddr(const uint8_t *peer_addr) {
  * - Must not be null or broadcast-only
  * - Adds to ESP-NOW peer list if valid
  */
-void ESP32_RC_ESPNOW::setPeerAddr(const RCAddress_t& peer_addr) {
-  // Validate address size for ESP-NOW (must be MAC address)
-  if (peer_addr.size != RC_ADDR_SIZE) {
-    LOG_ERROR("Invalid address size for ESP-NOW: %d bytes (expected %d)", peer_addr.size, RC_ADDR_SIZE);
-    return;
-  }
-  
-  // Use legacy interface for ESP-NOW specific handling
-  setPeerAddr(peer_addr.data);
-}
+// Removed - using base class implementation now
 
 /**
  * @brief Remove current peer and return to broadcast mode
@@ -463,8 +454,8 @@ bool ESP32_RC_ESPNOW::getProtocolConfig(const char* key, char* value, size_t len
  * 
  * @return Generic address structure containing MAC broadcast address
  */
-RCAddress_t ESP32_RC_ESPNOW::createBroadcastAddress() const {
+void ESP32_RC_ESPNOW::createBroadcastAddress(RCAddress_t& broadcast_addr) const {
   uint8_t broadcast_mac[RC_ADDR_SIZE] = RC_BROADCAST_MAC;
-  return RCAddress_t(broadcast_mac, RC_ADDR_SIZE);
+  memcpy(broadcast_addr, broadcast_mac, RC_ADDR_SIZE);
 }
 

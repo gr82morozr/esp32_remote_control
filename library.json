@@ -40,6 +40,10 @@
       "name": "RF24",
       "owner": "nrf24",
       "version": "^1.4.11"
+    },
+    {
+      "name": "ArduinoJson",
+      "version": "^6.19.0"
     }
   ],
   "build": {
@@ -64,6 +68,10 @@
     {
       "name": "Basic nRF24L01+",
       "base": "examples/basic_nrf24.cpp"
+    },
+    {
+      "name": "PC Serial Bridge - USB to Wireless",
+      "base": "examples/pc_serial_bridge/pc_serial_bridge.cpp"
     }
   ]
 }

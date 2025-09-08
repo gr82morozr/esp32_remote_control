@@ -130,7 +130,7 @@ bool ESP32_RC_NRF24::init() {
     
     // Set my address in generic format
     nrfToMacAddress(nrf_my_addr_, my_addr_);
-    my_address_.setAddress(my_addr_, RC_ADDR_SIZE);
+    memcpy(my_address_, my_addr_, RC_ADDR_SIZE);
     
     LOG("NRF24 My Address: %s (NRF: %s)", formatAddr(my_addr_).c_str(), formatNrfAddr(nrf_my_addr_).c_str());
     LOG("NRF24 Config: Channel=%d, DataRate=%s, Power=%s, Retries=%d/%d", 
@@ -253,9 +253,9 @@ void ESP32_RC_NRF24::checkHeartbeat() {
  * 
  * @return Generic address structure with NRF24 broadcast
  */
-RCAddress_t ESP32_RC_NRF24::createBroadcastAddress() const {
+void ESP32_RC_NRF24::createBroadcastAddress(RCAddress_t& broadcast_addr) const {
     uint8_t broadcast_mac[RC_ADDR_SIZE] = {0xF0, 0xF0, 0xF0, 0xF0, 0xAA, 0x00};
-    return RCAddress_t(broadcast_mac, RC_ADDR_SIZE);
+    memcpy(broadcast_addr, broadcast_mac, RC_ADDR_SIZE);
 }
 
 // ========== Receive Task and Message Handling ==========
@@ -392,7 +392,7 @@ void ESP32_RC_NRF24::setPeerAddr(const uint8_t* peer_addr) {
     macToNrfAddress(peer_addr, nrf_peer_addr_);
     
     // Update generic address
-    peer_address_.setAddress(peer_addr, RC_ADDR_SIZE);
+    memcpy(peer_address_, peer_addr, RC_ADDR_SIZE);
     
     LOG_DEBUG("Peer address set: %s (NRF: %s)", 
               formatAddr(peer_addr_).c_str(), 
@@ -404,17 +404,7 @@ void ESP32_RC_NRF24::setPeerAddr(const uint8_t* peer_addr) {
  * 
  * @param peer_addr Generic address structure
  */
-void ESP32_RC_NRF24::setPeerAddr(const RCAddress_t& peer_addr) {
-    // Validate address size (must be 6 bytes for MAC compatibility)
-    if (peer_addr.size != RC_ADDR_SIZE) {
-        LOG_ERROR("Invalid address size for NRF24: %d bytes (expected %d)", 
-                  peer_addr.size, RC_ADDR_SIZE);
-        return;
-    }
-    
-    // Use legacy interface for actual processing
-    setPeerAddr(peer_addr.data);
-}
+// Removed - using base class implementation now
 
 /**
  * @brief Clear peer address and return to broadcast mode
@@ -422,7 +412,7 @@ void ESP32_RC_NRF24::setPeerAddr(const RCAddress_t& peer_addr) {
 void ESP32_RC_NRF24::unsetPeerAddr() {
     memset(peer_addr_, 0, RC_ADDR_SIZE);
     memset(nrf_peer_addr_, 0, 5);
-    peer_address_.clear();
+    memset(peer_address_, 0, RC_ADDR_SIZE);
     handshake_completed_ = false;
     
     LOG_DEBUG("Peer address cleared, returning to broadcast mode");
@@ -544,7 +534,7 @@ void ESP32_RC_NRF24::sendAddressHandshake() {
 void ESP32_RC_NRF24::handleHandshakeMessage(const RCMessage_t& msg) {
     if (msg.type == RCMSG_TYPE_HEARTBEAT) {
         // Extract peer address and complete handshake
-        setPeerAddr(msg.from_addr);
+        setPeerAddr((const uint8_t*)msg.from_addr);
         handshake_completed_ = true;
         switchToPeerPipe();
         
