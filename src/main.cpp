@@ -1,134 +1,309 @@
 #include <Arduino.h>
-
-/*
-This library is an example of how to use the ESP32RemoteControl library
-there are two protocols implemented: NRF24 and ESPNOW
-
-For peer-to-peer communication, you can use either NRF24 or ESPNOW.
-the exact same code works for both nodes, just change the protocol in the constructor.
-For example, to use NRF24, you would do:
-  controller = new ESP32_RC_ESPNOW(false);
-  controller = new ESP32_RC_NRF24(false); 
-  
-  
-  fast_mode is set to false by default, it measn the message will be queued and sent in the background. (queue size is 10 messages by default)
-  fast_mode is set to true, it means the message will be sent immediately
-
-  RCMessage_t is the message structure used to send data between the nodes. It supports up to 10 channels of data.
-  
-  RCMessage_t has the following structure:
-  struct RCMessage_t {  
-    uint8_t type;  // Message type (RCMSG_TYPE_DATA or RCMSG_TYPE_HEARTBEAT)
-    uint8_t from_addr[RC_ADDR_SIZE];  // Sender address
-    uint8_t to_addr[RC_ADDR_SIZE];    // Receiver address
-    RCPayload_t payload;               // Payload data
-  };
-
-
-*/
-
-// OPTIONAL: Override protocol selection (uncomment to override user_config.h default)
-// #define ESP32_RC_PROTOCOL RC_PROTO_NRF24
-
 #include "esp32_rc_factory.h"
 
-// Protocol is selected in esp32_rc_user_config.h via ESP32_RC_PROTOCOL macro
-// Or can be overridden by defining ESP32_RC_PROTOCOL before including headers
+/*
+Mock Receiver - LED Control Demo
 
-ESP32RemoteControl* controller = nullptr;  // Declare globally
+This firmware demonstrates the ESP32 Remote Control library by creating a simple
+receiver that blinks the built-in LED based on commands from the PC Serial Bridge.
 
+Features:
+- Receives data via ESP-NOW or NRF24L01+
+- Blinks LED based on received values
+- Prints received data to Serial console
+- Automatic protocol detection
+- Configurable LED behaviors
 
-unsigned long last_data_send_ms = 0;
-RCPayload_t outgoing = {0};
-RCPayload_t incoming;
+Hardware Required:
+- ESP32 development board
+- Built-in LED (or external LED on GPIO 2)
+- Optional: NRF24L01+ module for NRF24 testing
 
-/**
- * @brief Populate RCPayload_t with dynamic dummy data for testing
- * @param payload Reference to payload structure to fill
- * 
- * Generates realistic test data that changes over time:
- * - id1-id4: Rotating counter values (0-255)
- * - value1: Time in seconds (float)
- * - value2: Sine wave (-1.0 to +1.0)
- * - value3: Random voltage (0.0 to 5.0V)
- * - value4: Temperature simulation (15.0 to 35.0°C)
- * - value5: Rotating percentage (0.0 to 100.0%)
- * - flags: Bit pattern with rotating bits
- */
-void populateDummyData(RCPayload_t& payload) {
-  static uint32_t counter = 0;
-  counter++;
-  
-  // Time-based calculations
-  float time_sec = millis() / 1000.0f;
-  float phase = time_sec * 0.1f;  // Slow phase for sine wave
-  
-  // ID fields - rotating counters with different rates
-  payload.id1 = (counter / 10) % 256;        // Slow counter
-  payload.id2 = (counter / 5) % 256;         // Medium counter  
-  payload.id3 = counter % 256;               // Fast counter
-  payload.id4 = (counter * 3) % 256;         // Fast counter with multiplier
-  
-  // Value fields - dynamic floating point data
-  payload.value1 = time_sec;                 // Current time in seconds
-  payload.value2 = sin(phase) * 1000.0f;     // Sine wave oscillation (±1000)
-  payload.value3 = (random(0, 5000) / 1000.0f); // Random voltage 0.0-5.0V
-  payload.value4 = 20.0f + sin(phase * 2) * 10.0f; // Temperature 10-30°C
-  payload.value5 = (counter % 1000) / 10.0f; // Percentage 0.0-100.0%
-  
-  // Flags field - rotating bit patterns
-  uint8_t bit_pos = counter % 8;
-  payload.flags = (1 << bit_pos) | (counter & 0x0F); // Rotating bit + counter
+Usage:
+1. Flash this firmware to a second ESP32 (different from bridge device)
+2. Power both devices
+3. Use PC Serial Bridge + Python client to send commands
+4. Watch LED blink patterns and serial output
+
+LED Behaviors:
+- v1 > 50: Fast blink (100ms on/off)
+- v1 20-50: Medium blink (250ms on/off) 
+- v1 < 20: Slow blink (500ms on/off)
+- flags & 1: LED stays ON
+- flags & 2: LED stays OFF
+- id1: Controls blink count in burst mode
+*/
+
+// =============================================================================
+// Configuration
+// =============================================================================
+
+// Protocol selection - choose one protocol to compile with
+#define MOCK_PROTOCOL RC_PROTO_ESPNOW    // or RC_PROTO_NRF24
+
+// LED configuration
+#define LED_PIN BUILTIN_LED               // Use built-in LED
+#define LED_ACTIVE_LOW true               // Most ESP32 boards have active-low LED
+
+// Debug output control
+#define ENABLE_SERIAL_OUTPUT true         // Print received data to Serial
+#define ENABLE_LED_CONTROL true           // Control LED based on received data
+
+// =============================================================================
+// Global Variables
+// =============================================================================
+
+ESP32RemoteControl* controller = nullptr;
+RCPayload_t last_received_data = {0};
+
+// LED control variables
+unsigned long last_led_toggle = 0;
+unsigned long led_blink_interval = 500;  // Default: 500ms (slow blink)
+bool led_state = false;
+bool led_override_on = false;
+bool led_override_off = false;
+int burst_blinks_remaining = 0;
+unsigned long burst_blink_start = 0;
+
+// Statistics
+unsigned long total_packets_received = 0;
+unsigned long last_packet_time = 0;
+unsigned long connection_start_time = 0;
+
+void printReceivedData(const RCPayload_t& data); 
+// =============================================================================
+// LED Control Functions
+// =============================================================================
+
+void setLED(bool state) {
+    if (LED_ACTIVE_LOW) {
+        digitalWrite(LED_PIN, !state);  // Invert for active-low LED
+    } else {
+        digitalWrite(LED_PIN, state);
+    }
+    led_state = state;
 }
+
+void updateLEDBehavior(const RCPayload_t& data) {
+    if (!ENABLE_LED_CONTROL) return;
+    
+    // Check flag overrides first
+    if (data.flags & 2) {
+        // Flag bit 1: Force LED OFF
+        led_override_off = true;
+        led_override_on = false;
+        setLED(false);
+        return;
+    } else if (data.flags & 1) {
+        // Flag bit 0: Force LED ON
+        led_override_on = true;
+        led_override_off = false;
+        setLED(true);
+        return;
+    } else {
+        // Clear overrides - return to normal blinking
+        led_override_on = false;
+        led_override_off = false;
+    }
+    
+    // Set blink interval based on v1 value
+    if (data.value1 > 50.0f) {
+        led_blink_interval = 100;  // Fast blink
+    } else if (data.value1 > 20.0f) {
+        led_blink_interval = 250;  // Medium blink
+    } else {
+        led_blink_interval = 500;  // Slow blink
+    }
+    
+    // Burst mode: blink N times based on id1
+    if (data.id1 > 0 && burst_blinks_remaining == 0) {
+        burst_blinks_remaining = data.id1 * 2;  // *2 for on/off cycles
+        burst_blink_start = millis();
+        led_blink_interval = 100;  // Fast blinks for burst
+    }
+}
+
+void handleLEDBlinking() {
+    if (!ENABLE_LED_CONTROL) return;
+    
+    // Handle LED overrides
+    if (led_override_on || led_override_off) {
+        return;  // LED state is fixed, no blinking
+    }
+    
+    unsigned long now = millis();
+    
+    // Handle burst mode
+    if (burst_blinks_remaining > 0) {
+        if (now - last_led_toggle >= 100) {  // Fast burst blinks
+            setLED(!led_state);
+            last_led_toggle = now;
+            burst_blinks_remaining--;
+        }
+        return;
+    }
+    
+    // Normal blinking mode
+    if (now - last_led_toggle >= led_blink_interval) {
+        setLED(!led_state);
+        last_led_toggle = now;
+    }
+}
+
+// =============================================================================
+// Data Processing Functions
+// =============================================================================
+
+void processReceivedData(const RCPayload_t& data) {
+    last_received_data = data;
+    total_packets_received++;
+    last_packet_time = millis();
+    
+    // Update LED behavior based on received data
+    updateLEDBehavior(data);
+    
+    // Print received data to Serial console
+    if (ENABLE_SERIAL_OUTPUT) {
+        printReceivedData(data);
+    }
+}
+
+void printReceivedData(const RCPayload_t& data) {
+    Serial.printf("[%lu] RECEIVED DATA:\n", millis());
+    Serial.printf("  IDs: %d, %d, %d, %d\n", data.id1, data.id2, data.id3, data.id4);
+    Serial.printf("  Values: %.2f, %.2f, %.2f, %.2f, %.2f\n", 
+                 data.value1, data.value2, data.value3, data.value4, data.value5);
+    Serial.printf("  Flags: 0x%02X (%d)\n", data.flags, data.flags);
+    
+    // Interpret flags for user
+    String flag_meaning = "Flags: ";
+    if (data.flags & 1) flag_meaning += "LED_ON ";
+    if (data.flags & 2) flag_meaning += "LED_OFF ";
+    if (data.flags & 4) flag_meaning += "FLAG_2 ";
+    if (data.flags & 8) flag_meaning += "FLAG_3 ";
+    if (data.flags == 0) flag_meaning += "NORMAL_BLINK";
+    Serial.printf("  %s\n", flag_meaning.c_str());
+    
+    // LED behavior feedback
+    if (data.flags & 2) {
+        Serial.println("  LED: FORCED OFF");
+    } else if (data.flags & 1) {
+        Serial.println("  LED: FORCED ON");
+    } else if (data.id1 > 0) {
+        Serial.printf("  LED: BURST BLINK x%d\n", data.id1);
+    } else {
+        String blink_speed = (data.value1 > 50) ? "FAST" : 
+                           (data.value1 > 20) ? "MEDIUM" : "SLOW";
+        Serial.printf("  LED: %s BLINK (%.0f%%)\n", blink_speed.c_str(), data.value1);
+    }
+    
+    Serial.printf("  Total packets: %lu, Protocol: %s\n\n", 
+                 total_packets_received, 
+                 protocolToString(controller->getProtocol()));
+}
+
+void printStatistics() {
+    static unsigned long last_stats_print = 0;
+    unsigned long now = millis();
+    
+    // Print stats every 10 seconds
+    if (now - last_stats_print >= 10000) {
+        Serial.println("=== RECEIVER STATISTICS ===");
+        Serial.printf("Protocol: %s\n", protocolToString(controller->getProtocol()));
+        Serial.printf("Connection State: %s\n", 
+                     controller->getConnectionState() == RCConnectionState_t::CONNECTED ? "CONNECTED" :
+                     controller->getConnectionState() == RCConnectionState_t::CONNECTING ? "CONNECTING" :
+                     controller->getConnectionState() == RCConnectionState_t::DISCONNECTED ? "DISCONNECTED" : "ERROR");
+        Serial.printf("Total Packets Received: %lu\n", total_packets_received);
+        Serial.printf("Uptime: %.1f seconds\n", now / 1000.0);
+        if (last_packet_time > 0) {
+            Serial.printf("Last Packet: %.1f seconds ago\n", (now - last_packet_time) / 1000.0);
+        }
+        
+        // Print current LED state
+        Serial.printf("LED State: %s", led_state ? "ON" : "OFF");
+        if (led_override_on) Serial.print(" (FORCED ON)");
+        else if (led_override_off) Serial.print(" (FORCED OFF)");
+        else if (burst_blinks_remaining > 0) Serial.printf(" (BURST %d remaining)", burst_blinks_remaining);
+        else Serial.printf(" (BLINK %lums)", led_blink_interval);
+        Serial.println();
+        
+        Serial.println("===========================\n");
+        last_stats_print = now;
+    }
+}
+
+// =============================================================================
+// Setup & Main Loop
+// =============================================================================
+
 void setup() {
-  Serial.begin(115200);
-  
-  // Check if protocol is available at compile time
-  if (!isProtocolAvailable(ESP32_RC_PROTOCOL)) {
-    LOG_ERROR("Protocol %s not available (not compiled in)", protocolToString(ESP32_RC_PROTOCOL));
-    LOG_ERROR("Check ESP32_RC_PROTOCOL macro in esp32_rc_user_config.h");
-    SYS_HALT;
-  }
-  
-  // Create controller using factory function
-  controller = createProtocolInstance(ESP32_RC_PROTOCOL, true);  // Fast mode
-  if (!controller) {
-    LOG_ERROR("Failed to create protocol instance");
-    SYS_HALT;
-  }
-  
-  pinMode(BUILTIN_LED, OUTPUT);
-  LOG("ESP32_RC Example");
-  DELAY(1000);
-  LOG("Starting ESP32_RC demo - Protocol: %s ", protocolToString(controller->getProtocol()));
-  
-  // Global metrics control (affects all controller instances)
-  ESP32RemoteControl::enableGlobalMetrics(true);  // Enable metrics calculation
-  // ESP32RemoteControl::disableGlobalMetrics();  // Uncomment to disable metrics
-  
-  // Enable automatic metrics display every 1 second
-  controller->enableMetricsDisplay(true, 1000);
-  
-  // Init the controller
-  controller->connect();
+    Serial.begin(115200);
+    delay(1000);
+    
+    // Initialize LED pin
+    pinMode(LED_PIN, OUTPUT);
+    setLED(false);  // Start with LED off
+    
+    // Startup banner
+    Serial.println("========================================");
+    Serial.println("ESP32 Remote Control - Mock Receiver");
+    Serial.println("LED Control Demo");
+    Serial.println("========================================");
+    Serial.printf("Protocol: %s\n", protocolToString(MOCK_PROTOCOL));
+    Serial.printf("LED Pin: GPIO %d (%s)\n", LED_PIN, 
+                 LED_ACTIVE_LOW ? "Active Low" : "Active High");
+    Serial.println();
+    
+    // Check if selected protocol is available at compile time
+    if (!isProtocolAvailable(MOCK_PROTOCOL)) {
+        Serial.printf("❌ Protocol %s not available (not compiled in)\n", protocolToString(MOCK_PROTOCOL));
+        Serial.println("Check ENABLE_ESP32_RC_* macros in esp32_rc_user_config.h");
+        while(1) delay(1000);  // Halt
+    }
+    
+    // Initialize controller with selected protocol using factory function
+    controller = createProtocolInstance(MOCK_PROTOCOL, false);  // Reliable mode
+    
+    if (controller) {
+        Serial.printf("Controller initialized: %s\n", protocolToString(controller->getProtocol()));
+        
+        // Disable metrics display to keep output clean
+        controller->enableMetricsDisplay(false);
+        
+        // Connect to start listening
+        controller->connect();
+        connection_start_time = millis();
+        
+        Serial.println("Listening for remote control data...");
+        Serial.println("Commands from PC Serial Bridge:");
+        Serial.println("- v1 > 50: Fast LED blink");
+        Serial.println("- v1 20-50: Medium LED blink"); 
+        Serial.println("- v1 < 20: Slow LED blink");
+        Serial.println("- flags & 1: LED ON");
+        Serial.println("- flags & 2: LED OFF");
+        Serial.println("- id1 > 0: Burst blink N times");
+        Serial.println();
+    } else {
+        Serial.println("❌ Failed to initialize controller!");
+        while(1) delay(1000);  // Halt on failure
+    }
 }
-
 
 void loop() {
-  // Populate outgoing packet with dynamic dummy data
-  populateDummyData(outgoing);
-  controller->sendData(outgoing);  // Send the data
-  
-  // Receive data (but don't print it - metrics will show success/failure)
-  if (controller->recvData(incoming)) {
-    // Data received successfully - metrics automatically tracked
-    // Optional: Toggle LED or other indicator
-    toggleGPIO(BUILTIN_LED);
-  }
-  
-  // Print metrics automatically every second (handled by base class)
-  controller->printMetrics();
-  
-  // Small delay to avoid overwhelming the system
-  DELAY(5);
+    RCPayload_t received_data;
+    
+    // Check for incoming data
+    if (controller && controller->recvData(received_data)) {
+        processReceivedData(received_data);
+    }
+    
+    // Handle LED blinking behavior
+    handleLEDBlinking();
+    
+    // Print periodic statistics  
+    printStatistics();
+    
+    // Small delay to prevent overwhelming the system
+    delay(1);
 }

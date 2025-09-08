@@ -31,29 +31,37 @@ class ESP32RemoteControl {
   ESP32RemoteControl(bool fast_mode = false);
   virtual ~ESP32RemoteControl();
 
-  // Pure virtuals for protocol implementations
-  virtual void connect();
+  // ========== STABLE PUBLIC API (LOCKED DOWN) ==========
+  
+  // Core protocol identification - MUST be implemented by protocols
   virtual RCProtocol_t getProtocol() const = 0;
   
-  // Configuration interface for protocol-specific settings
+  // Connection management - has default implementation, can be overridden
+  virtual void connect();
+  
+  // Optional protocol-specific configuration interface
   virtual bool setProtocolConfig(const char* key, const char* value) { return false; }
   virtual bool getProtocolConfig(const char* key, char* value, size_t len) { return false; }
 
-  // User/upper-layer interface
+  // ========== STABLE USER API (DO NOT OVERRIDE) ==========
+  
+  // Callback management - stable implementation
   void setOnRecieveMsgHandler(recv_cb_t cb);
   void setOnDiscoveryHandler(discovery_cb_t cb);
   
-  // Discovery status access
+  // Discovery status access - stable implementation
   RCDiscoveryResult_t getDiscoveryResult() const { return discovery_result_; }
 
-  virtual bool sendMsg(const RCMessage_t& msg);       // Send a message
-  virtual bool recvMsg(RCMessage_t& msg);             // recieve message
-  virtual bool sendData(const RCPayload_t& payload);  // Send a message
-  virtual bool recvData(RCPayload_t& payload);        // recieve message
+  // High-level message interface - stable implementation
+  bool sendMsg(const RCMessage_t& msg);       // Send a message
+  bool recvMsg(RCMessage_t& msg);             // Receive message
+  bool sendData(const RCPayload_t& payload);  // Send data payload
+  bool recvData(RCPayload_t& payload);        // Receive data payload
 
+  // Connection state access - stable implementation
   RCConnectionState_t getConnectionState() const;
   
-  // Metrics access
+  // Metrics access - stable implementation
   Metrics_t getSendMetrics() const { return send_metrics_; }
   Metrics_t getReceiveMetrics() const { return recv_metrics_; }
   void resetMetrics() { send_metrics_.reset(); recv_metrics_.reset(); }
@@ -69,34 +77,37 @@ class ESP32RemoteControl {
   void disableMetricsDisplay() { enableMetricsDisplay(false); }
 
  protected:
-  // Protocol logic helpers
+  // ========== PROTOCOL IMPLEMENTATION INTERFACE ==========
+  
+  // Called by protocol implementations when data arrives
   void onDataReceived(const RCMessage_t& msg);
-
-  // Heartbeat logic
-  virtual void checkHeartbeat();
-  // Called when a heartbeat message is received
+  
+  // PURE VIRTUAL - Must be implemented by all protocols
+  virtual void lowLevelSend(const RCMessage_t& msg) = 0;  // Low-level protocol send
+  virtual RCMessage_t parseRawData(const uint8_t* data, size_t len) = 0;  // Parse raw protocol data
+  
+  // VIRTUAL WITH DEFAULTS - Can be overridden if needed
+  virtual void checkHeartbeat();  // Connection timeout checking
+  virtual uint8_t getAddressSize() const { return RC_ADDR_SIZE; }  // Address size
+  virtual void createBroadcastAddress(RCAddress_t& broadcast_addr) const;  // Broadcast address
+  
+  // ADDRESS MANAGEMENT - Can be overridden for protocol-specific handling
+  virtual void setPeerAddr(const uint8_t* peer_addr);  // Legacy interface
+  virtual void unsetPeerAddr();  // Clear peer address
+  
+  // ========== HELPER METHODS FOR PROTOCOLS ==========
+  
+  // Called by protocol implementations - stable implementation  
+  void onPeerDiscovered(const RCAddress_t& addr, const char* info = nullptr);  // Peer discovery
+  
+  // System message sending - can be overridden if needed
+  virtual void sendSysMsg(const uint8_t msgType);
+  
+  // Legacy heartbeat handler - deprecated but kept for compatibility
   virtual void onHeartbeatReceived(const RCMessage_t& msg);
   
-  // Discovery helpers - called by protocol implementations
-  void onPeerDiscovered(const RCAddress_t& addr, const char* info = nullptr);
-
-  // Low-level send methods
-  virtual void sendSysMsg(const uint8_t msgType);
-  // Low-level send method to be implemented by protocol
-  virtual void lowLevelSend(const RCMessage_t& msg) = 0;
-
-  // Parse raw data into RCMessage_t structure, to be implemented by protocol
-  virtual RCMessage_t parseRawData(const uint8_t* data, size_t len) = 0;
-
-  // Set or unset the peer address for communication
-  virtual void setPeerAddr(const uint8_t* peer_addr);  // Legacy interface (6-byte MAC)
-  void setPeerAddr(const RCAddress_t& peer_addr);  // Simplified interface
-  // Unset the peer address, typically called on disconnect
-  virtual void unsetPeerAddr();
-  
-  // Get protocol-specific address sizes
-  virtual uint8_t getAddressSize() const { return RC_ADDR_SIZE; }  // Default: MAC address size
-  virtual void createBroadcastAddress(RCAddress_t& broadcast_addr) const;  // Protocol-specific broadcast address
+  // Simplified address interface - stable implementation
+  void setPeerAddr(const RCAddress_t& peer_addr);
 
   // Default connection state
   RCConnectionState_t conn_state_ = RCConnectionState_t::DISCONNECTED;

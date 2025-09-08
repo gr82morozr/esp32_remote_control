@@ -261,13 +261,15 @@ public:
     auto recv_metrics = controller->getReceiveMetrics();
     
     Serial.printf("{\"status\":{\"protocol\":\"%s\", \"connection\":\"%s\", "
-                 "\"send_metrics\":{\"success\":%lu, \"failed\":%lu, \"total\":%lu, \"rate\":%.1f}, "
-                 "\"recv_metrics\":{\"success\":%lu, \"failed\":%lu, \"total\":%lu, \"rate\":%.1f}, "
+                 "\"send_metrics\":{\"success\":%u, \"failed\":%u, \"total\":%u, \"rate\":%.1f, \"tps\":%.1f}, "
+                 "\"recv_metrics\":{\"success\":%u, \"failed\":%u, \"total\":%u, \"rate\":%.1f, \"tps\":%.1f}, "
                  "\"uptime_ms\":%lu}}\n",
                  protocol_manager_->getProtocolName().c_str(),
                  connection_state.c_str(),
-                 send_metrics.successful, send_metrics.failed, send_metrics.total, send_metrics.getSuccessRate(),
-                 recv_metrics.successful, recv_metrics.failed, recv_metrics.total, recv_metrics.getSuccessRate(),
+                 send_metrics.successful, send_metrics.failed, send_metrics.getTotal(), 
+                 send_metrics.getSuccessRate(), send_metrics.getTransactionRate(),
+                 recv_metrics.successful, recv_metrics.failed, recv_metrics.getTotal(),
+                 recv_metrics.getSuccessRate(), recv_metrics.getTransactionRate(),
                  millis());
   }
   
@@ -281,13 +283,65 @@ public:
     auto discovery_result = controller->getDiscoveryResult();
     
     if (discovery_result.discovered) {
-      Serial.printf("{\"discovery\":{\"status\":\"peer_found\", \"timestamp\":%lu, \"info\":\"%s\"}}\n",
-                   discovery_result.discovery_time_ms, discovery_result.info);
+      // Format MAC address as string
+      char mac_str[18];
+      snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+               discovery_result.peer_addr[0], discovery_result.peer_addr[1],
+               discovery_result.peer_addr[2], discovery_result.peer_addr[3],
+               discovery_result.peer_addr[4], discovery_result.peer_addr[5]);
+      
+      Serial.printf("{\"discovery\":{\"status\":\"peer_found\", \"timestamp\":%lu, \"mac\":\"%s\"}}\n",
+                   millis(), mac_str);
     } else {
       Serial.println("{\"discovery\":{\"status\":\"no_peers_found\"}}");
     }
   }
 };
+
+// =============================================================================
+// Command Handler
+// =============================================================================
+
+void handleCommand(const String& command, const JsonObject& params) {
+  if (command == "data") {
+    dataBridge.sendDataCommand(params);
+    
+  } else if (command == "switch") {
+    String protocol = params["protocol"] | "";
+    if (protocol == "espnow") {
+      protocolManager.initProtocol(PROTOCOL_ESPNOW);
+    } else if (protocol == "nrf24") {
+      protocolManager.initProtocol(PROTOCOL_NRF24);
+    } else {
+      Serial.println("{\"error\":\"invalid_protocol\", \"supported\":[\"espnow\", \"nrf24\"]}");
+    }
+    
+  } else if (command == "status") {
+    statusReporter.reportStatus();
+    
+  } else if (command == "discover") {
+    statusReporter.reportDiscoveryResult();
+    
+  } else if (command == "help") {
+    Serial.println("{\"help\":{");
+    Serial.println("  \"commands\":{");
+    Serial.println("    \"data\":\"Send data payload - {\\\"cmd\\\":\\\"data\\\", \\\"v1\\\":1.0, \\\"id1\\\":1}\",");
+    Serial.println("    \"switch\":\"Switch protocol - {\\\"cmd\\\":\\\"switch\\\", \\\"protocol\\\":\\\"espnow|nrf24\\\"}\",");
+    Serial.println("    \"status\":\"Get bridge status - {\\\"cmd\\\":\\\"status\\\"}\",");
+    Serial.println("    \"discover\":\"Check peer discovery - {\\\"cmd\\\":\\\"discover\\\"}\",");
+    Serial.println("    \"help\":\"Show this help - {\\\"cmd\\\":\\\"help\\\"}\"");
+    Serial.println("  },");
+    Serial.println("  \"payload_fields\":{");
+    Serial.println("    \"id1-id4\":\"Integer IDs (0-255)\",");
+    Serial.println("    \"v1-v5\":\"Float values\","); 
+    Serial.println("    \"flags\":\"8-bit flags field\"");
+    Serial.println("  }");
+    Serial.println("}}");
+    
+  } else {
+    Serial.printf("{\"error\":\"unknown_command\", \"received\":\"%s\"}\n", command.c_str());
+  }
+}
 
 // =============================================================================
 // Global Bridge Components  
@@ -337,47 +391,3 @@ void loop() {
   delay(1);
 }
 
-// =============================================================================
-// Command Handler
-// =============================================================================
-
-void handleCommand(const String& command, const JsonObject& params) {
-  if (command == "data") {
-    dataBridge.sendDataCommand(params);
-    
-  } else if (command == "switch") {
-    String protocol = params["protocol"] | "";
-    if (protocol == "espnow") {
-      protocolManager.initProtocol(PROTOCOL_ESPNOW);
-    } else if (protocol == "nrf24") {
-      protocolManager.initProtocol(PROTOCOL_NRF24);
-    } else {
-      Serial.println("{\"error\":\"invalid_protocol\", \"supported\":[\"espnow\", \"nrf24\"]}");
-    }
-    
-  } else if (command == "status") {
-    statusReporter.reportStatus();
-    
-  } else if (command == "discover") {
-    statusReporter.reportDiscoveryResult();
-    
-  } else if (command == "help") {
-    Serial.println("{\"help\":{");
-    Serial.println("  \"commands\":{");
-    Serial.println("    \"data\":\"Send data payload - {\\\"cmd\\\":\\\"data\\\", \\\"v1\\\":1.0, \\\"id1\\\":1}\",");
-    Serial.println("    \"switch\":\"Switch protocol - {\\\"cmd\\\":\\\"switch\\\", \\\"protocol\\\":\\\"espnow|nrf24\\\"}\",");
-    Serial.println("    \"status\":\"Get bridge status - {\\\"cmd\\\":\\\"status\\\"}\",");
-    Serial.println("    \"discover\":\"Check peer discovery - {\\\"cmd\\\":\\\"discover\\\"}\",");
-    Serial.println("    \"help\":\"Show this help - {\\\"cmd\\\":\\\"help\\\"}\"");
-    Serial.println("  },");
-    Serial.println("  \"payload_fields\":{");
-    Serial.println("    \"id1-id4\":\"Integer IDs (0-255)\",");
-    Serial.println("    \"v1-v5\":\"Float values\","); 
-    Serial.println("    \"flags\":\"8-bit flags field\"");
-    Serial.println("  }");
-    Serial.println("}}");
-    
-  } else {
-    Serial.printf("{\"error\":\"unknown_command\", \"received\":\"%s\"}\n", command.c_str());
-  }
-}

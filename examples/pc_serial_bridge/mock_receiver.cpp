@@ -70,6 +70,7 @@ unsigned long total_packets_received = 0;
 unsigned long last_packet_time = 0;
 unsigned long connection_start_time = 0;
 
+void printReceivedData(const RCPayload_t& data); 
 // =============================================================================
 // LED Control Functions
 // =============================================================================

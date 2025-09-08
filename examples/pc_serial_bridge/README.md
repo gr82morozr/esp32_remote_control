@@ -27,8 +27,6 @@ PC (Python Client) ←→ ESP32 (Bridge) ←→ [ESP-NOW/NRF24] ←→ Remote De
 | `simple_test.py` | Minimal example for quick testing |
 | `led_control_demo.py` | Complete LED control demonstration |
 | `requirements.txt` | Python dependencies |
-| `run_client.bat/.sh` | Platform-specific client launchers |
-| `run_led_demo.bat` | LED demo launcher for Windows |
 | `PC_Bridge_Usage_Guide.md` | Detailed technical documentation |
 | `README.md` | This file - quick start guide |
 
@@ -298,9 +296,6 @@ python led_control_demo.py COM3 --mode interactive
 
 # Sine wave brightness control
 python led_control_demo.py COM3 --mode sine --duration 30
-
-# Windows: Double-click launcher
-run_led_demo.bat
 ```
 
 ### Interactive Commands

@@ -177,7 +177,7 @@ void ESP32RemoteControl::connect() {
  * Note: Callback executes in protocol context - keep processing minimal
  */
 void ESP32RemoteControl::setOnRecieveMsgHandler(recv_cb_t cb) {
-  // Set the custom callback for received messages
+  // Set the custom callback for received messages - FINAL implementation
   recv_callback_ = cb;
 }
 
@@ -200,6 +200,7 @@ void ESP32RemoteControl::setOnRecieveMsgHandler(recv_cb_t cb) {
  * Note: Callback executes in protocol context - keep processing minimal
  */
 void ESP32RemoteControl::setOnDiscoveryHandler(discovery_cb_t cb) {
+  // Set discovery callback - FINAL implementation
   discovery_callback_ = cb;
 }
 
@@ -218,6 +219,7 @@ void ESP32RemoteControl::setOnDiscoveryHandler(discovery_cb_t cb) {
  *   }
  */
 RCConnectionState_t ESP32RemoteControl::getConnectionState() const {
+  // Get current connection state - FINAL implementation
   return conn_state_;
 }
 
@@ -535,6 +537,7 @@ void ESP32RemoteControl::sendSysMsg(const uint8_t msgType) {
  * Thread safety: Queue operations are thread-safe via FreeRTOS
  */
 bool ESP32RemoteControl::sendMsg(const RCMessage_t& msg) {
+  // Send message through queue - FINAL implementation
   if (fast_mode_) {
     // Fast mode: overwrite the queue with the new message
     BaseType_t ok = xQueueOverwrite(queue_send_, &msg);
@@ -580,6 +583,7 @@ bool ESP32RemoteControl::sendMsg(const RCMessage_t& msg) {
  * - Fast mode: Single message (latest overwrites previous)
  */
 bool ESP32RemoteControl::recvMsg(RCMessage_t& msg) {
+  // Receive message from queue - FINAL implementation
   // Attempt to receive a message from the queue
   BaseType_t ok = xQueueReceive(queue_recv_, &msg, pdMS_TO_TICKS(RECV_MSG_TIMEOUT_MS));
   if (ok == pdTRUE) {
@@ -616,6 +620,7 @@ bool ESP32RemoteControl::recvMsg(RCMessage_t& msg) {
  * This is the preferred method for sending user data.
  */
 bool ESP32RemoteControl::sendData(const RCPayload_t& payload) {
+  // Send data payload - FINAL implementation
   RCMessage_t msg = {};
   msg.type = RCMSG_TYPE_DATA;  // Or any appropriate type for "data" messages
   memcpy(msg.from_addr, my_addr_, RC_ADDR_SIZE);
@@ -648,6 +653,7 @@ bool ESP32RemoteControl::sendData(const RCPayload_t& payload) {
  * This is the preferred method for receiving user data.
  */
 bool ESP32RemoteControl::recvData(RCPayload_t& payload) {
+  // Receive data payload - FINAL implementation
   RCMessage_t msg = {};
 
   // Try to receive a message (could be blocking or non-blocking)
@@ -703,8 +709,7 @@ void ESP32RemoteControl::sendFromQueueLoop(void* arg) {
         self->lowLevelSend(msg);
         // Note: Actual success/failure tracking done in protocol-specific lowLevelSend()
         // Update send metrics
-        self->send_metrics_.addSuccess();
-      }
+       }
     } while (ulTaskNotifyTake(pdTRUE, 0) > 0);
   }
 }
