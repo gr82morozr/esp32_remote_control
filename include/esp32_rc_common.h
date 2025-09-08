@@ -74,7 +74,8 @@ inline const char* protocolToString(RCProtocol_t protocol) {
 // ========== Message Types ==========
 enum : uint8_t {
   RCMSG_TYPE_DATA = 0,
-  RCMSG_TYPE_HEARTBEAT = 3
+  RCMSG_TYPE_HEARTBEAT = 3,
+  RCMSG_TYPE_IP_DISCOVERY = 4  // WiFi IP discovery broadcast
 };
 
 // ========== Struct Sizes ==========
@@ -288,6 +289,34 @@ enum class RCConnectionState_t : uint8_t {
   CONNECTING = 1,
   CONNECTED = 2,
   ERROR = 3
+};
+
+// ========== Discovery Result Structure ==========
+struct RCDiscoveryResult_t {
+  bool discovered;                    // True if peer was discovered
+  RCAddress_t peer_address;          // Discovered peer address
+  unsigned long discovery_time_ms;   // When peer was discovered
+  char info[32];                     // Protocol-specific info (e.g., IP address string)
+  
+  RCDiscoveryResult_t() : discovered(false), discovery_time_ms(0) {
+    info[0] = 0;  // Empty string
+  }
+  
+  void setDiscovered(const RCAddress_t& addr, const char* additional_info = nullptr) {
+    discovered = true;
+    peer_address = addr;
+    discovery_time_ms = millis();
+    if (additional_info) {
+      RC_SAFE_STRCPY(info, additional_info, sizeof(info));
+    }
+  }
+  
+  void clear() {
+    discovered = false;
+    peer_address.clear();
+    discovery_time_ms = 0;
+    info[0] = 0;
+  }
 };
 
 

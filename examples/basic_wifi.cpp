@@ -27,11 +27,12 @@ For example, to use NRF24, you would do:
 
 */
 
-#include "esp32_rc_espnow.h"
+#include "esp32_rc_wifi.h"
 
 
 
-#define ESP32_RC_PROTOCOL ESP32_RC_ESPNOW
+#define ESP32_RC_PROTOCOL ESP32_RC_WIFI
+
 
 ESP32_RC_PROTOCOL* controller = nullptr;  // Declare globally
 
@@ -47,33 +48,27 @@ void setup() {
   DELAY(1000);
   LOG("Starting ESP32_RC demo - Protocol: %s ", String(controller->getProtocol()));
   
-  // Global metrics control (affects all controller instances)
-  ESP32_RC_PROTOCOL::enableGlobalMetrics(true);  // Enable metrics calculation
-  // ESP32_RC_PROTOCOL::disableGlobalMetrics();  // Uncomment to disable metrics
-  
-  // Enable automatic metrics display every 1 second
-  controller->enableMetricsDisplay(true, 1000);
-  
+  // STEP 1: Disable metrics per build instructions (keep output clean)
+  //ESP32_RC_PROTOCOL::disableGlobalMetrics();  // Disable metrics for clean output
+  ESP32_RC_PROTOCOL::enableGlobalMetrics();   // Enable metrics if desired
   // Init the controller
   controller->connect();
 }
 
 
 void loop() {
-  // Send data
-  Outgoing.value1 = millis() / 1000.0f;  // Update value1 with current time in seconds
-  controller->sendData(Outgoing);  // Send the data
+  // STEP 1: ONLY peer discovery and AP negotiation - no data sending yet
+  // Disable all data operations per build instructions
   
-  // Receive data (but don't print it - metrics will show success/failure)
-  if (controller->recvData(incoming)) {
-    // Data received successfully - metrics automatically tracked
-    // Optional: Toggle LED or other indicator
+  // Just indicate we're alive with LED
+  static unsigned long last_blink = 0;
+  if (millis() - last_blink > 1000) {
     toggleGPIO(BUILTIN_LED);
+    last_blink = millis();
+    
+    // Simple status log (clean output)
+    //LOG("STEP1: Peer discovery active...");
   }
   
-  // Print metrics automatically every second (handled by base class)
-  controller->printMetrics();
-  
-  // Small delay to avoid overwhelming the system
-  DELAY(5);
+  DELAY(100); // Reduced system load
 }

@@ -29,7 +29,7 @@
  * HSPI uses different internal routing but same GPIO pins on ESP32
  */
 #ifndef NRF_SPI_BUS
-#define NRF_SPI_BUS           HSPI
+#define NRF_SPI_BUS           VSPI
 #endif
 
 /**
@@ -137,23 +137,77 @@
 // =======================================================
 
 /**
+ * WiFi Operation Mode:
+ * 0 = Auto-negotiate (scan for peers, become AP if none found)
+ * 1 = Force Station Mode (connect to existing WLAN)  
+ * 2 = Force Access Point Mode (create own network)
+ */
+#ifndef RC_WIFI_MODE
+    #ifdef DEVICE_MODE_AP
+        #define RC_WIFI_MODE          2    // Access Point mode (create own network)
+    #elif defined(DEVICE_MODE_STATION)
+        #define RC_WIFI_MODE          1    // Station mode (connect to AP)
+    #else
+        #define RC_WIFI_MODE          0    // Auto-negotiate mode (RECOMMENDED)
+    #endif
+#endif
+
+/**
  * WiFi Network Credentials
- * Used for WiFi-based communication protocols
+ * For Station mode: credentials to connect to existing AP
+ * For AP mode: credentials for the network this device creates
+ * Note: Both devices must use the same SSID/password for peer-to-peer communication
  */
 #ifndef RC_WIFI_SSID
 #define RC_WIFI_SSID          "ESP32_RC_Network"
 #endif
 
 #ifndef RC_WIFI_PASSWORD  
-#define RC_WIFI_PASSWORD      "rcpassword"
+#define RC_WIFI_PASSWORD      "esp32remote"
+#endif
+
+/**
+ * WiFi Communication Protocol:
+ * 0 = TCP (reliable, connection-oriented, requires client/server roles)
+ * 1 = UDP (fast, connectionless, symmetric peer-to-peer)
+ * 
+ * UDP is recommended for peer-to-peer communication because:
+ * - No client/server role assignment needed
+ * - Both devices can send/receive equally 
+ * - Simpler discovery and connection process
+ * - Lower latency for real-time applications
+ */
+#ifndef RC_WIFI_PROTOCOL
+#define RC_WIFI_PROTOCOL      1    // UDP mode (better for peer-to-peer)
 #endif
 
 /**
  * WiFi Communication Port
- * TCP/UDP port for WiFi-based protocols
+ * TCP/UDP port for communication
  */
 #ifndef RC_WIFI_PORT
 #define RC_WIFI_PORT          12345
+#endif
+
+/**
+ * WiFi Connection Timeout (ms)
+ * How long to wait for WiFi connection before giving up
+ */
+#ifndef RC_WIFI_TIMEOUT_MS
+#define RC_WIFI_TIMEOUT_MS    10000
+#endif
+
+/**
+ * WiFi Discovery Settings
+ * IP_DISCOVERY_INTERVAL_MS: How often to broadcast IP (ms)
+ * IP_DISCOVERY_PORT: UDP port for discovery broadcasts
+ */
+#ifndef RC_WIFI_IP_DISCOVERY_INTERVAL_MS
+#define RC_WIFI_IP_DISCOVERY_INTERVAL_MS    2000
+#endif
+
+#ifndef RC_WIFI_IP_DISCOVERY_PORT
+#define RC_WIFI_IP_DISCOVERY_PORT           12346
 #endif
 
 // =======================================================

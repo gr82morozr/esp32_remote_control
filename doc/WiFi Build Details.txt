@@ -1,0 +1,50 @@
+For AP Mode : 
+1 - one start scan the WiFi if no WiFi with given name (hard-coded in client config)
+    if not found after certain time, the start hosting the AP
+    if found, then try to connect to it.
+
+
+2 - once connected, send UDP broadcast with it's MAC & IP (not hard-coded in config),
+    and at the same time, listen to UDP from other nodes to recieve partner node MAC, IP.
+
+    Once recieved, then they finished the "handshake"
+
+3 - Then start TCP connection to partner, and sending real data and hear beat.
+
+4 - if real data recieved, then it can also be treated as success heartbeat recieved to reset heart timer.
+
+5 - in case of heart beat timeout, then status = Disconnect, stop responding any heartbeat, 
+    re-start HAndshake process again
+
+6 - if any other way can detect the real disconnection, also re-start the handshake 
+
+!!! IMPORT !!! - build instructions !!!
+Build the code step by step, once confirm stable,reliable,fast then move to next part.
+
+step 1 - most important, no touch existing ESPNOW, NRF24 protocal and base class code,
+  they are proved already working.
+
+step 2 - first try to discover each other and negociate who is AP.
+    disable all other code, like printmatrics .. to keep the output clean.
+    dont hard-code IP address in config
+
+
+  For discovery - below is the hinet solution ----
+  ==================================================
+    This is the lowest-level Wi-Fi trick: you use the ESP32’s Wi-Fi radio to send and receive arbitrary 802.11 frames directly, without ever bringing up an AP or doing a scan.
+    🔹 How it works
+    Normally:
+    AP → STA discovery depends on beacons and probes.
+    Scan = STA hopping across channels to listen for beacons. That’s slow (dwell 100–300 ms per channel).
+    Instead:
+    Both nodes fix their Wi-Fi to a single rendezvous channel (say channel 6).
+    Each node periodically injects a custom 802.11 management frame (e.g., a vendor-specific action frame or probe request) with a unique marker (OUI or payload).
+    Both nodes run in sniff receive mode to listen for those frames.
+    As soon as a node hears the peer’s frame → discovery is complete. No scanning, no AP.
+==========================================
+
+
+step 3 - the node needs to listen to certain way to be ready for new handshake all the time, in case of the other node reboot.    
+         then re-do the handshake. 
+
+

@@ -182,6 +182,28 @@ void ESP32RemoteControl::setOnRecieveMsgHandler(recv_cb_t cb) {
 }
 
 /**
+ * @brief Set callback function for peer discovery events
+ * 
+ * Registers a callback function that will be called whenever a peer device is discovered.
+ * This is useful for automatic pairing, connection management, or UI updates.
+ * 
+ * @param cb Function pointer to discovery callback, or nullptr to disable
+ * 
+ * Callback signature: void callback(const RCDiscoveryResult_t& result)
+ * 
+ * Example usage:
+ *   void onPeerFound(const RCDiscoveryResult_t& result) {
+ *     Serial.printf("Found peer: %s\n", result.info);
+ *   }
+ *   controller->setOnDiscoveryHandler(onPeerFound);
+ * 
+ * Note: Callback executes in protocol context - keep processing minimal
+ */
+void ESP32RemoteControl::setOnDiscoveryHandler(discovery_cb_t cb) {
+  discovery_callback_ = cb;
+}
+
+/**
  * @brief Get current connection state
  * 
  * @return Current connection state:
@@ -273,6 +295,35 @@ void ESP32RemoteControl::onDataReceived(const RCMessage_t& msg) {
         recv_metrics_.addFailure();  // Track failed message reception
       }
       break;
+  }
+}
+
+/**
+ * @brief Handle peer discovery event
+ * 
+ * Called by protocol implementations when a peer device is discovered.
+ * Updates the discovery result state and triggers user callback if registered.
+ * 
+ * @param addr Discovered peer address
+ * @param info Optional protocol-specific information (e.g., IP address, device name)
+ * 
+ * Thread safety: Uses recursive mutex for state updates
+ */
+void ESP32RemoteControl::onPeerDiscovered(const RCAddress_t& addr, const char* info) {
+  if (xSemaphoreTakeRecursive(data_lock_, pdMS_TO_TICKS(5)) == pdTRUE) {
+    // Update discovery result
+    discovery_result_.setDiscovered(addr, info);
+    
+    xSemaphoreGiveRecursive(data_lock_);
+    
+    // Trigger callback if registered (outside lock to avoid deadlock)
+    if (discovery_callback_) {
+      discovery_callback_(discovery_result_);
+    }
+    
+    LOG_INFO("[Discovery] Peer discovered: %s", info ? info : "No additional info");
+  } else {
+    LOG_ERROR("[Discovery] Failed to acquire lock for discovery update");
   }
 }
 

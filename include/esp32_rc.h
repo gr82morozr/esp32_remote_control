@@ -26,6 +26,7 @@
 class ESP32RemoteControl {
  public:
   using recv_cb_t = void (*)(const RCMessage_t& msg);
+  using discovery_cb_t = void (*)(const RCDiscoveryResult_t& result);
 
   ESP32RemoteControl(bool fast_mode = false);
   virtual ~ESP32RemoteControl();
@@ -40,6 +41,10 @@ class ESP32RemoteControl {
 
   // User/upper-layer interface
   void setOnRecieveMsgHandler(recv_cb_t cb);
+  void setOnDiscoveryHandler(discovery_cb_t cb);
+  
+  // Discovery status access
+  RCDiscoveryResult_t getDiscoveryResult() const { return discovery_result_; }
 
   virtual bool sendMsg(const RCMessage_t& msg);       // Send a message
   virtual bool recvMsg(RCMessage_t& msg);             // recieve message
@@ -71,6 +76,9 @@ class ESP32RemoteControl {
   virtual void checkHeartbeat();
   // Called when a heartbeat message is received
   virtual void onHeartbeatReceived(const RCMessage_t& msg);
+  
+  // Discovery helpers - called by protocol implementations
+  void onPeerDiscovered(const RCAddress_t& addr, const char* info = nullptr);
 
   // Low-level send methods
   virtual void sendSysMsg(const uint8_t msgType);
@@ -129,6 +137,10 @@ class ESP32RemoteControl {
  private:
   // Internal method to handle received messages
   recv_cb_t recv_callback_ = nullptr;
+  discovery_cb_t discovery_callback_ = nullptr;
+  
+  // Discovery state
+  RCDiscoveryResult_t discovery_result_;
 
   // Task handle for the sendFromQueue loop
   TaskHandle_t sendFromQueueTaskHandle = nullptr;
