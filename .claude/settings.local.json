@@ -67,7 +67,12 @@
       "Bash(move:*)",
       "Bash(chmod:*)",
       "Bash(\"C:\\Users\\gr82m\\.platformio\\penv\\Scripts\\pio.exe\" run --target clean)",
-      "Bash(\"C:\\Users\\gr82m\\.platformio\\penv\\Scripts\\pio.exe\" run -v)"
+      "Bash(\"C:\\Users\\gr82m\\.platformio\\penv\\Scripts\\pio.exe\" run -v)",
+      "Bash(python:*)",
+      "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" led_control_demo.py --help)",
+      "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" led_control_demo.py COM1 --mode interactive)",
+      "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" -c \"print(''Testing Unicode: ✅ ❌ 📤'')\")",
+      "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" led_control_demo.py COM99 --mode interactive)"
     ],
     "deny": [],
     "ask": []

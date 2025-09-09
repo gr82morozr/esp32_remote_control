@@ -27,8 +27,8 @@ Usage:
 
 LED Behaviors:
 - v1 > 50: Fast blink (100ms on/off)
-- v1 20-50: Medium blink (250ms on/off) 
-- v1 < 20: Slow blink (500ms on/off)
+- v1 20-50: Medium blink (300ms on/off) 
+- v1 < 20: Slow blink (800ms on/off)
 - flags & 1: LED stays ON
 - flags & 2: LED stays OFF
 - id1: Controls blink count in burst mode
@@ -75,11 +75,11 @@ void printReceivedData(const RCPayload_t& data);
 // LED Control Functions
 // =============================================================================
 
-void setLED(bool state) {
+void writeGPIO(bool state) {
     if (LED_ACTIVE_LOW) {
-        digitalWrite(LED_PIN, !state);  // Invert for active-low LED
+        digitalWrite(LED_PIN, !state);  // For active-low: invert state (true->LOW, false->HIGH)
     } else {
-        digitalWrite(LED_PIN, state);
+        digitalWrite(LED_PIN, state);   // For active-high: direct state (true->HIGH, false->LOW)
     }
     led_state = state;
 }
@@ -92,13 +92,13 @@ void updateLEDBehavior(const RCPayload_t& data) {
         // Flag bit 1: Force LED OFF
         led_override_off = true;
         led_override_on = false;
-        setLED(false);
+        writeGPIO(true);  // Inverted: call true for OFF
         return;
     } else if (data.flags & 1) {
         // Flag bit 0: Force LED ON
         led_override_on = true;
         led_override_off = false;
-        setLED(true);
+        writeGPIO(false);  // Inverted: call false for ON
         return;
     } else {
         // Clear overrides - return to normal blinking
@@ -110,9 +110,9 @@ void updateLEDBehavior(const RCPayload_t& data) {
     if (data.value1 > 50.0f) {
         led_blink_interval = 100;  // Fast blink
     } else if (data.value1 > 20.0f) {
-        led_blink_interval = 250;  // Medium blink
+        led_blink_interval = 300;  // Medium blink
     } else {
-        led_blink_interval = 500;  // Slow blink
+        led_blink_interval = 800;  // Slow blink
     }
     
     // Burst mode: blink N times based on id1
@@ -126,17 +126,28 @@ void updateLEDBehavior(const RCPayload_t& data) {
 void handleLEDBlinking() {
     if (!ENABLE_LED_CONTROL) return;
     
+    // Check connection state - LED should be off when not connected
+    if (!controller || controller->getConnectionState() != RCConnectionState_t::CONNECTED) {
+        writeGPIO(false);
+        return;
+    }
+    
+    // Check if we have recent data (within last 5 seconds)
+    unsigned long now = millis();
+    if (last_packet_time == 0 || (now - last_packet_time) > 5000) {
+        writeGPIO(false);  // No recent data, turn off LED
+        return;
+    }
+    
     // Handle LED overrides
     if (led_override_on || led_override_off) {
         return;  // LED state is fixed, no blinking
     }
     
-    unsigned long now = millis();
-    
     // Handle burst mode
     if (burst_blinks_remaining > 0) {
         if (now - last_led_toggle >= 100) {  // Fast burst blinks
-            setLED(!led_state);
+            writeGPIO(!led_state);
             last_led_toggle = now;
             burst_blinks_remaining--;
         }
@@ -145,7 +156,7 @@ void handleLEDBlinking() {
     
     // Normal blinking mode
     if (now - last_led_toggle >= led_blink_interval) {
-        setLED(!led_state);
+        writeGPIO(!led_state);
         last_led_toggle = now;
     }
 }
@@ -243,7 +254,7 @@ void setup() {
     
     // Initialize LED pin
     pinMode(LED_PIN, OUTPUT);
-    setLED(false);  // Start with LED off
+    writeGPIO(false);  // Start with LED off - will stay off until connected and receiving data
     
     // Startup banner
     Serial.println("========================================");
@@ -277,9 +288,9 @@ void setup() {
         
         Serial.println("Listening for remote control data...");
         Serial.println("Commands from PC Serial Bridge:");
-        Serial.println("- v1 > 50: Fast LED blink");
-        Serial.println("- v1 20-50: Medium LED blink"); 
-        Serial.println("- v1 < 20: Slow LED blink");
+        Serial.println("- v1 > 50: Fast LED blink (100ms)");
+        Serial.println("- v1 20-50: Medium LED blink (300ms)"); 
+        Serial.println("- v1 < 20: Slow LED blink (800ms)");
         Serial.println("- flags & 1: LED ON");
         Serial.println("- flags & 2: LED OFF");
         Serial.println("- id1 > 0: Burst blink N times");

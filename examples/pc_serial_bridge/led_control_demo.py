@@ -57,11 +57,11 @@ class LEDControlDemo:
             self.receive_thread = threading.Thread(target=self._receive_loop, daemon=True)
             self.receive_thread.start()
             
-            print(f"✅ Connected to ESP32 bridge on {self.port}")
+            print(f"[OK] Connected to ESP32 bridge on {self.port}")
             return True
             
         except Exception as e:
-            print(f"❌ Failed to connect: {e}")
+            print(f"[ERROR] Failed to connect: {e}")
             return False
     
     def disconnect(self):
@@ -70,7 +70,7 @@ class LEDControlDemo:
         if self.serial_conn:
             self.serial_conn.close()
         self.connected = False
-        print("🔌 Disconnected from bridge")
+        print("[INFO] Disconnected from bridge")
     
     def send_command(self, command):
         """Send JSON command to bridge"""
@@ -79,11 +79,11 @@ class LEDControlDemo:
         
         try:
             json_str = json.dumps(command)
-            self.serial_conn.write((json_str + '\\n').encode())
-            print(f"📤 {json_str}")
+            self.serial_conn.write((json_str + '\n').encode())
+            print(f"[SEND] {json_str}")
             return True
         except Exception as e:
-            print(f"❌ Send error: {e}")
+            print(f"[ERROR] Send error: {e}")
             return False
     
     def _receive_loop(self):
@@ -95,8 +95,8 @@ class LEDControlDemo:
                     data = self.serial_conn.read(self.serial_conn.in_waiting).decode('utf-8', errors='ignore')
                     buffer += data
                     
-                    while '\\n' in buffer:
-                        line, buffer = buffer.split('\\n', 1)
+                    while '\n' in buffer:
+                        line, buffer = buffer.split('\n', 1)
                         line = line.strip()
                         if line:
                             self._process_response(line)
@@ -104,7 +104,7 @@ class LEDControlDemo:
                 time.sleep(0.01)
             except Exception as e:
                 if self.running:
-                    print(f"❌ Receive error: {e}")
+                    print(f"[ERROR] Receive error: {e}")
                 break
     
     def _process_response(self, line):
@@ -115,24 +115,24 @@ class LEDControlDemo:
             
             if "status" in data:
                 if data["status"] == "data_sent":
-                    print(f"✅ [{timestamp}] Command sent via {data.get('protocol', 'unknown')}")
+                    print(f"[OK] [{timestamp}] Command sent via {data.get('protocol', 'unknown')}")
                 elif data["status"] == "protocol_switched":
-                    print(f"🔄 [{timestamp}] Switched to {data.get('protocol', 'unknown')}")
+                    print(f"[SWITCH] [{timestamp}] Switched to {data.get('protocol', 'unknown')}")
                     
             elif "event" in data and data["event"] == "data_received":
-                print(f"📥 [{timestamp}] Receiver response: v1={data.get('v1', 0):.1f}")
+                print(f"[RECV] [{timestamp}] Receiver response: v1={data.get('v1', 0):.1f}")
                 
             elif "error" in data:
-                print(f"❌ [{timestamp}] Error: {data['error']}")
+                print(f"[ERROR] [{timestamp}] Error: {data['error']}")
                 
         except json.JSONDecodeError:
             # Non-JSON response, just print it
             timestamp = datetime.now().strftime("%H:%M:%S")
-            print(f"📨 [{timestamp}] {line}")
+            print(f"[MSG] [{timestamp}] {line}")
 
 def run_demo_sequence(demo, duration=30):
     """Run automated LED control demonstration"""
-    print(f"\\n🎯 Starting LED Control Demo ({duration} seconds)")
+    print(f"\n[DEMO] Starting LED Control Demo ({duration} seconds)")
     print("=" * 50)
     
     start_time = time.time()
@@ -164,31 +164,31 @@ def run_demo_sequence(demo, duration=30):
                     demo_index += 1
                     current_demo_start = now
                     next_demo = demos[demo_index]
-                    print(f"\\n🔸 {next_demo['name']}")
+                    print(f"\n[DEMO] {next_demo['name']}")
                     demo.send_command(next_demo["cmd"])
                 else:
                     # Restart sequence
                     demo_index = 0
                     current_demo_start = now
-                    print(f"\\n🔄 Restarting sequence...")
+                    print(f"\n[DEMO] Restarting sequence...")
                     
         else:
             # First demo
-            print(f"🔸 {demos[0]['name']}")
+            print(f"[DEMO] {demos[0]['name']}")
             demo.send_command(demos[0]["cmd"])
             current_demo_start = now
         
         time.sleep(0.1)
     
     # End with normal blinking
-    print("\\n🔸 Normal Blink (End)")
+    print("\n[DEMO] Normal Blink (End)")
     demo.send_command({"cmd": "data", "v1": 25.0, "flags": 0})
     
-    print("\\n✅ Demo sequence completed!")
+    print("\n[OK] Demo sequence completed!")
 
 def run_interactive_mode(demo):
     """Run interactive LED control mode"""
-    print("\\n🎮 Interactive LED Control Mode")
+    print("\n[INTERACTIVE] LED Control Mode")
     print("Commands:")
     print("  fast        - Fast blink (v1=80)")
     print("  medium      - Medium blink (v1=35)")
@@ -202,7 +202,7 @@ def run_interactive_mode(demo):
     
     while demo.connected:
         try:
-            cmd_input = input("\\n> ").strip().lower()
+            cmd_input = input("\n> ").strip().lower()
             if not cmd_input:
                 continue
                 
@@ -213,47 +213,47 @@ def run_interactive_mode(demo):
                 break
             elif cmd == 'fast':
                 demo.send_command({"cmd": "data", "v1": 80.0})
-                print("💡 Fast blink mode")
+                print("[LED] Fast blink mode")
             elif cmd == 'medium':
                 demo.send_command({"cmd": "data", "v1": 35.0})
-                print("💡 Medium blink mode")
+                print("[LED] Medium blink mode")
             elif cmd == 'slow':
                 demo.send_command({"cmd": "data", "v1": 10.0})
-                print("💡 Slow blink mode")
+                print("[LED] Slow blink mode")
             elif cmd == 'on':
                 demo.send_command({"cmd": "data", "flags": 1})
-                print("💡 LED forced ON")
+                print("[LED] LED forced ON")
             elif cmd == 'off':
                 demo.send_command({"cmd": "data", "flags": 2})
-                print("💡 LED forced OFF")
+                print("[LED] LED forced OFF")
             elif cmd == 'burst' and len(parts) == 2:
                 try:
                     count = int(parts[1])
                     demo.send_command({"cmd": "data", "v1": 50.0, "id1": count})
-                    print(f"💡 Burst blink x{count}")
+                    print(f"[LED] Burst blink x{count}")
                 except ValueError:
-                    print("❌ Invalid burst count")
+                    print("[ERROR] Invalid burst count")
             elif cmd == 'switch' and len(parts) == 2:
                 protocol = parts[1]
                 if protocol in ['espnow', 'nrf24']:
                     demo.send_command({"cmd": "switch", "protocol": protocol})
-                    print(f"🔄 Switching to {protocol}")
+                    print(f"[SWITCH] Switching to {protocol}")
                 else:
-                    print("❌ Invalid protocol (use espnow or nrf24)")
+                    print("[ERROR] Invalid protocol (use espnow or nrf24)")
             elif cmd == 'status':
                 demo.send_command({"cmd": "status"})
             else:
-                print("❌ Unknown command. Available: fast, medium, slow, on, off, burst N, switch PROT, status, quit")
+                print("[ERROR] Unknown command. Available: fast, medium, slow, on, off, burst N, switch PROT, status, quit")
                 
         except KeyboardInterrupt:
-            print("\\n👋 Exiting interactive mode...")
+            print("\n[INFO] Exiting interactive mode...")
             break
         except Exception as e:
-            print(f"❌ Command error: {e}")
+            print(f"[ERROR] Command error: {e}")
 
 def run_sine_wave_demo(demo, duration=20):
     """Run sine wave LED brightness control"""
-    print(f"\\n🌊 Sine Wave Demo ({duration} seconds)")
+    print(f"\n[SINE] Sine Wave Demo ({duration} seconds)")
     print("LED brightness will follow a sine wave pattern")
     
     start_time = time.time()
@@ -271,10 +271,10 @@ def run_sine_wave_demo(demo, duration=20):
             "id1": 1
         })
         
-        print(f"🌊 Brightness: {brightness:.1f}%", end='\\r')
+        print(f"[SINE] Brightness: {brightness:.1f}%", end='\r')
         time.sleep(0.1)
     
-    print("\\n✅ Sine wave demo completed!")
+    print("\n[OK] Sine wave demo completed!")
 
 def main():
     parser = argparse.ArgumentParser(description="LED Control Demo for ESP32 Remote Control")
@@ -303,7 +303,7 @@ def main():
         demo.send_command({"cmd": "status"})
         time.sleep(1)
         
-        print("\\n🚀 ESP32 LED Control Demo Ready!")
+        print("\n[READY] ESP32 LED Control Demo Ready!")
         print("Make sure mock_receiver.cpp is running on a second ESP32")
         print("Watch the LED on the receiver device!")
         
@@ -316,9 +316,9 @@ def main():
             run_sine_wave_demo(demo, args.duration)
             
     except KeyboardInterrupt:
-        print("\\n👋 Demo interrupted by user")
+        print("\n[INFO] Demo interrupted by user")
     except Exception as e:
-        print(f"❌ Demo error: {e}")
+        print(f"[ERROR] Demo error: {e}")
     finally:
         demo.disconnect()
 
