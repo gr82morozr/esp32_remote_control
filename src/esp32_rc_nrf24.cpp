@@ -187,14 +187,24 @@ void ESP32_RC_NRF24::lowLevelSend(const RCMessage_t& msg) {
     // Resume listening
     radio_.startListening();
     
-    // Update metrics and log results
-    if (sendSuccess) {
-        send_metrics_.addSuccess();
-        LOG_DEBUG("NRF24 sent message type %d successfully", msg.type);
+    // Update metrics and log results (exclude heartbeat from metrics)
+    if (msg.type != RCMSG_TYPE_HEARTBEAT) {
+        if (sendSuccess) {
+            send_metrics_.addSuccess();
+            LOG_DEBUG("NRF24 sent message type %d successfully", msg.type);
+        } else {
+            send_metrics_.addFailure();
+            LOG_ERROR("NRF24 send failed after %d retries (type %d, pipe %d)", 
+                      MAX_SEND_RETRIES + 1, msg.type, pipeType_);
+        }
     } else {
-        send_metrics_.addFailure();
-        LOG_ERROR("NRF24 send failed after %d retries (type %d, pipe %d)", 
-                  MAX_SEND_RETRIES + 1, msg.type, pipeType_);
+        // Still log heartbeat results but don't include in metrics
+        if (sendSuccess) {
+            LOG_DEBUG("NRF24 sent heartbeat successfully");
+        } else {
+            LOG_ERROR("NRF24 heartbeat send failed after %d retries (pipe %d)", 
+                      MAX_SEND_RETRIES + 1, pipeType_);
+        }
     }
 }
 

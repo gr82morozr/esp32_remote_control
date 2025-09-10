@@ -264,6 +264,7 @@ void ESP32RemoteControl::onDataReceived(const RCMessage_t& msg) {
   switch (msg.type) {
     case RCMSG_TYPE_HEARTBEAT:
       // Heartbeat messages are now handled above, no additional processing needed
+      // Do not count heartbeats in receive metrics
       break;
     default:
       // Process data messages normally

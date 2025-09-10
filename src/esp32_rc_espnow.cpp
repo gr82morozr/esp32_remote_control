@@ -137,12 +137,17 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t &msg) {
     }
   }
   
-  // Final error handling and metrics update
-  if (sendResult != ESP_OK) {
-    LOG_ERROR("ESP-NOW send failed after %d retries: %s", MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
-    send_metrics_.addFailure();  // Track failed transmission
-  } else {
-    send_metrics_.addSuccess();  // Track successful transmission
+  // Final error handling and metrics update (exclude heartbeat from metrics)
+  if (msg.type != RCMSG_TYPE_HEARTBEAT) {
+    if (sendResult != ESP_OK) {
+      LOG_ERROR("ESP-NOW send failed after %d retries: %s", MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
+      send_metrics_.addFailure();  // Track failed transmission
+    } else {
+      send_metrics_.addSuccess();  // Track successful transmission
+    }
+  } else if (sendResult != ESP_OK) {
+    // Still log heartbeat errors but don't include in metrics
+    LOG_ERROR("ESP-NOW heartbeat send failed after %d retries: %s", MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
   }
 }
 
