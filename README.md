@@ -59,6 +59,9 @@ struct RCPayload_t {
 - ✅ **ESP-NOW** - Direct peer-to-peer communication using ESP32's built-in ESP-NOW protocol
 - ✅ **NRF24L01+** - 2.4GHz radio communication using nRF24L01+ modules
 
+**Under Development:**
+- 🔄 **WiFi Raw 802.11** - Raw 802.11 frame injection protocol
+
 **Future Development:**
 - ❌ **Bluetooth LE** - Planned for future implementation
 
@@ -294,4 +297,4 @@ This project is open source. See license file for details.
 
 ---
 
-**Ready Protocols**: ESP-NOW ✅ | NRF24L01+ ✅ | Bluetooth LE ❌
+**Ready Protocols**: ESP-NOW ✅ | NRF24L01+ ✅ | WiFi Raw 🔄 | Bluetooth LE ❌
