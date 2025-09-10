@@ -77,7 +77,8 @@
       "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" \"D:\\projects.git\\esp32_remote_control\\examples\\keyboard_remote_control\\test_demo.py\" --port COM99 --protocol espnow)",
       "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" \"D:\\projects.git\\esp32_remote_control\\examples\\keyboard_remote_control\\robot_controller.py\" --list-ports)",
       "Bash(dir:*)",
-      "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" \"D:/projects.git/esp32_remote_control/examples/keyboard_remote_control/keyboard_controller.py\" --list-ports)"
+      "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" \"D:/projects.git/esp32_remote_control/examples/keyboard_remote_control/keyboard_controller.py\" --list-ports)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []
