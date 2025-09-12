@@ -142,9 +142,8 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t &msg) {
     if (sendResult != ESP_OK) {
       LOG_ERROR("ESP-NOW send failed after %d retries: %s", MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
       send_metrics_.addFailure();  // Track failed transmission
-    } else {
-      send_metrics_.addSuccess();  // Track successful transmission
     }
+    // Note: Success metrics tracked in delivery callback (onDataSentInternal)
   } else if (sendResult != ESP_OK) {
     // Still log heartbeat errors but don't include in metrics
     LOG_ERROR("ESP-NOW heartbeat send failed after %d retries: %s", MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
@@ -286,8 +285,7 @@ void ESP32_RC_ESPNOW::onDataRecvStatic(const uint8_t *mac, const uint8_t *data, 
  * Note: This is an ESP-NOW system callback - not called directly by user code
  */
 void ESP32_RC_ESPNOW::onDataSentStatic(const uint8_t *mac,  esp_now_send_status_t status) {
-    // Called when data is sent
-   if (instance_) instance_->onDataSentInternal(mac, status);
+  if (instance_) instance_->onDataSentInternal(mac, status);
 }
 
 /**
@@ -357,13 +355,16 @@ RCMessage_t ESP32_RC_ESPNOW::parseRawData(const uint8_t *data, size_t len) {
  * - Peer reachability status
  */
 void ESP32_RC_ESPNOW::onDataSentInternal(const uint8_t *mac, esp_now_send_status_t status) {
-  // Handle send status for delivery confirmation tracking
-  if (status != ESP_NOW_SEND_SUCCESS) {
-    LOG_DEBUG("ESP-NOW send delivery failed to peer");
-    // Note: Actual send metrics are tracked in lowLevelSend() based on esp_now_send() result
-    // This callback provides additional delivery confirmation info
-  } else {
-    LOG_DEBUG("ESP-NOW message delivered successfully");
+  // If boradcast, no metrics update 
+  if (memcmp(mac, (const uint8_t[6])RC_BROADCAST_MAC, 6) != 0) {
+    // Track actual delivery success/failure in metrics
+    if (status == ESP_NOW_SEND_SUCCESS) {
+      LOG_DEBUG("ESP-NOW message delivered successfully");
+      send_metrics_.addSuccess();  // Track successful delivery
+    } else {
+      LOG_DEBUG("ESP-NOW send delivery failed to peer");
+      send_metrics_.addFailure();  // Track failed delivery
+    }
   }
 }
 
