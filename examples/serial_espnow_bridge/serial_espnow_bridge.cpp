@@ -13,6 +13,22 @@ Simple transparent bridge that reads serial input and forwards it via ESPNOW.
 
 ESP32RemoteControl* espnow_controller = nullptr;
 
+// Callback function for handling received ESPNOW data
+void onDataReceived(const RCMessage_t& msg) {
+  // Extract payload from message
+  const RCPayload_t* payload = msg.getPayload();
+  
+  // Forward raw payload bytes to serial
+  const uint8_t* raw_data = reinterpret_cast<const uint8_t*>(payload);
+  Serial.write(raw_data, sizeof(RCPayload_t));
+  
+  Serial.print("Received: ");
+  for (size_t i = 0; i < sizeof(RCPayload_t); i++) {
+    Serial.printf("%02X ", raw_data[i]);
+  }
+  Serial.println();
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -24,8 +40,9 @@ void setup() {
   
   if (espnow_controller) {
     espnow_controller->enableMetricsDisplay(false);
+    espnow_controller->setOnRecieveMsgHandler(onDataReceived);  // Register callback
     espnow_controller->connect();
-    Serial.println("ESPNOW controller initialized");
+    Serial.println("ESPNOW controller initialized with callback");
   } else {
     Serial.println("Failed to initialize ESPNOW controller");
     return;
@@ -73,19 +90,8 @@ void loop() {
     }
   }
   
-  // Check for incoming ESPNOW data and forward to serial
-  RCPayload_t incoming;
-  if (espnow_controller->recvData(incoming)) {
-    // Forward raw payload bytes to serial
-    uint8_t* raw_data = reinterpret_cast<uint8_t*>(&incoming);
-    Serial.write(raw_data, sizeof(RCPayload_t));
-    
-    Serial.print("Received: ");
-    for (size_t i = 0; i < sizeof(RCPayload_t); i++) {
-      Serial.printf("%02X ", raw_data[i]);
-    }
-    Serial.println();
-  }
+  // Incoming ESPNOW data is now handled by callback (onDataReceived)
+  // No need for polling recvData() anymore
   
   delay(1);
 }

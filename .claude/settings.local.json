@@ -78,7 +78,10 @@
       "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" \"D:\\projects.git\\esp32_remote_control\\examples\\keyboard_remote_control\\robot_controller.py\" --list-ports)",
       "Bash(dir:*)",
       "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" \"D:/projects.git/esp32_remote_control/examples/keyboard_remote_control/keyboard_controller.py\" --list-ports)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(del:*)",
+      "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" \"D:\\projects.git\\esp32_remote_control\\examples\\serial_espnow_bridge\\keyboard_serial.py\" --help)",
+      "Bash(\"C:\\Tools\\anaconda3\\envs\\py312\\python.exe\" \"D:\\projects.git\\esp32_remote_control\\examples\\serial_espnow_bridge\\keyboard_serial.py\")"
     ],
     "deny": [],
     "ask": []
