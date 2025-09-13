@@ -32,6 +32,30 @@ class ESP32_RC_ESPNOW : public ESP32RemoteControl {
   RCMessage_t parseRawData(const uint8_t* data, size_t len) override;  // Unified interface from base class
 
  private:
+  // ESPNOW-specific state , to track sent message status
+  static const int _ring_cap = 8;  // Must be power of 2
+  struct BoolRing {
+    volatile uint16_t head = 0, tail = 0;
+    bool buf[_ring_cap];
+    inline bool push(bool v) {
+      uint16_t h = head, n = uint16_t((h + 1) % _ring_cap);
+      if (n == tail) return false;      // full
+      buf[h] = v;
+      __sync_synchronize();             // publish before head moves
+      head = n;
+      return true;
+    }
+    inline bool pop(bool& out) {
+      uint16_t t = tail;
+      if (t == head) return false;      // empty
+      __sync_synchronize();             // acquire
+      out = buf[t];
+      tail = uint16_t((t + 1) % _ring_cap);
+      return true;
+    }
+  };
+  BoolRing _ring;
+
   bool init();
   // ESPNOW callback glue (static --> internal member)
   static void onDataRecvStatic(const uint8_t* mac, const uint8_t* data, int len);

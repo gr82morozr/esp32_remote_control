@@ -60,7 +60,7 @@ struct RCPayload_t {
 - ✅ **NRF24L01+** - 2.4GHz radio communication using nRF24L01+ modules
 
 **Under Development:**
-- 🔄 **WiFi Raw 802.11** - Raw 802.11 frame injection protocol
+- 🔄 **WiFi TCP/UDP** - WiFi network-based communication protocol
 
 **Future Development:**
 - ❌ **Bluetooth LE** - Planned for future implementation
@@ -78,10 +78,13 @@ struct RCPayload_t {
 - **Protocol-Specific Optimization**: Each protocol optimized for best performance
 
 ### Advanced Features
-- **Real-time Metrics**: Success rates, throughput monitoring, and error tracking
-- **Connection Management**: Automatic heartbeat system and reconnection on failure
+- **Real-time Metrics**: Success rates, throughput monitoring, and error tracking with TPS calculation
+- **Connection Management**: Automatic heartbeat system (100ms) and reconnection on failure (300ms timeout)
 - **Memory Efficient**: FreeRTOS queues and optimized message structures
-- **Fast/Reliable Modes**: Choose between low-latency or guaranteed delivery
+- **Fast/Reliable Modes**: Choose between low-latency (1 message queue) or guaranteed delivery (10 message queue)
+- **Global Metrics Control**: Enable/disable metrics calculation globally for performance optimization
+- **Heartbeat Exclusion**: Heartbeat messages excluded from send metrics to avoid skewing statistics
+- **Custom Payload Override**: Override RCPayload_t structure for protocol-specific optimizations
 
 ## Quick Start
 
@@ -129,13 +132,17 @@ void onDataReceived(const RCMessage_t& msg) {
 void setup() {
     Serial.begin(115200);
     
-    // Create controller based on selected protocol
-    controller = ESP32RemoteControlFactory::create();
-    controller->setOnRecieveMsgHandler(onDataReceived);
-    
-    // Start connection
-    controller->connect();
-    Serial.println("Connecting...");
+    // Create controller based on selected protocol  
+    controller = createProtocolInstance(ESP32_RC_PROTOCOL, false);
+    if (controller) {
+        controller->setOnRecieveMsgHandler(onDataReceived);
+        
+        // Start connection
+        controller->connect();
+        Serial.println("Connecting...");
+    } else {
+        Serial.println("Failed to create controller!");
+    }
 }
 
 void loop() {
@@ -146,7 +153,9 @@ void loop() {
         payload.id1 = 42;
         payload.value1 = random(0, 100) / 100.0f;
         
-        controller->sendData(payload);
+        if (controller) {
+            controller->sendData(payload);
+        }
         lastSend = millis();
     }
     
@@ -201,7 +210,7 @@ Common settings you may want to modify:
 
 ```cpp
 // Protocol Selection
-#define ESP32_RC_PROTOCOL RC_PROTO_ESPNOW  // or RC_PROTO_NRF24
+#define ESP32_RC_PROTOCOL RC_PROTO_ESPNOW  // or RC_PROTO_NRF24, RC_PROTO_WIFI
 
 // ESP-NOW Settings
 #define ESPNOW_CHANNEL        2            // Radio Channel (1-13)
@@ -212,6 +221,13 @@ Common settings you may want to modify:
 #define NRF24_DATA_RATE       RF24_1MBPS   // Speed vs Range balance
 #define NRF24_PA_LEVEL        RF24_PA_HIGH // TX Power level
 
+// WiFi Settings
+#define RC_WIFI_SSID          "ESP32_RC_Network"
+#define RC_WIFI_PASSWORD      "esp32remote"
+#define RC_WIFI_MODE          0            // 0=Auto, 1=Station, 2=AP
+#define RC_WIFI_PROTOCOL      1            // 0=TCP, 1=UDP
+#define RC_WIFI_PORT          12345
+
 // Pin Assignments (NRF24L01+)
 #define PIN_NRF_CE            17
 #define PIN_NRF_CSN           5
@@ -220,25 +236,67 @@ Common settings you may want to modify:
 #define PIN_NRF_MOSI          23
 ```
 
-## Examples
+### Custom Payload Override
 
-### PC Serial Bridge
-Control ESP32 devices from a computer using Python scripts:
+For protocols that support larger packets (like ESP-NOW up to ~250 bytes), you can override the default 25-byte payload:
 
-```bash
-# LED Control Demo
-python examples/pc_serial_bridge/led_control_demo.py COM3 --protocol espnow
+```cpp
+// In esp32_rc_user_config.h (before any includes)
+#ifndef RC_PAYLOAD_T_DEFINED
+#define RC_PAYLOAD_T_DEFINED
 
-# Robot Controller with Keyboard
-python examples/keyboard_remote_control/robot_controller.py --port COM3
+struct RCPayload_t {
+  uint8_t command_type;
+  float sensor_data[50];    // 200 bytes for ESP-NOW
+  uint8_t status_flags[4];
+  char debug_string[40];
+  // Total: ~245 bytes (within ESP-NOW limit)
+};
+
+#undef RC_PAYLOAD_MAX_SIZE
+#define RC_PAYLOAD_MAX_SIZE sizeof(RCPayload_t)
+#endif
 ```
 
-### Robot Remote Control
-Real-time robot control using keyboard input:
+## Examples
 
+The library includes several complete examples demonstrating different use cases:
+
+### 1. Basic Protocol Examples
+- **`basic_espnow.cpp`** - Simple ESP-NOW communication
+- **`basic_nrf24.cpp`** - Simple NRF24L01+ communication  
+- **`basic_wifi.cpp`** - Simple WiFi communication
+- **`remote_blinkled.cpp`** - LED control demonstration
+
+### 2. Keyboard Remote Control System
+Complete keyboard-controlled robot system with bidirectional communication:
+
+```bash
+# Run keyboard controller (connects to ESP32 bridge)
+python examples/keyboard_remote_control/keyboard_controller.py --port COM3
+
+# Test automated command sequences
+python examples/keyboard_remote_control/test_demo.py --port COM3 --protocol espnow
+```
+
+**Controls:**
 - **Arrow Keys**: Movement control (Forward/Backward/Left/Right)
 - **Space Bar**: Stop/Stand still
 - **ESC**: Exit program
+
+### 3. Serial-ESPNOW Bridge
+Transparent bridge for raw data passthrough:
+
+```bash
+# Interactive bridge with dual windows
+python examples/serial_espnow_bridge/keyboard_serial.py
+```
+
+**Features:**
+- Text-based communication with unique flags (`RC_DATA:`, `RC_SENT:`)
+- Filters debug output from mixed serial streams
+- Dual-window interface (input + output)
+- Real-time bidirectional communication
 
 
 ## Performance & Monitoring
@@ -248,30 +306,42 @@ Enable metrics to monitor performance:
 
 ```cpp
 controller->enableMetricsDisplay(true, 1000);  // Display every 1000ms
-controller->enableGlobalMetrics(true);         // Enable metrics calculation
+ESP32RemoteControl::enableGlobalMetrics(true); // Enable metrics calculation globally
 ```
 
 Metrics include:
 - **Success Rate**: Percentage of successful transmissions
-- **Throughput**: Transactions per second (TPS)
-- **Connection Status**: Real-time connection state
+- **Throughput**: Transactions per second (TPS) with sliding window calculation
+- **Connection Status**: Real-time connection state (CONN/DISC/CONN?/ERR)
 - **Error Tracking**: Failed transmission counts
+- **Protocol Info**: Current protocol and time since startup
+
+**Sample Output:**
+```
+Time(s) | Protocol | Conn | Send(OK/Fail/Rate/TPS) | Recv(OK/Fail/Rate/TPS) | Total(Sent/Recv)
+     45 |  ESPNOW  | CONN | 42/ 3/ 93%/12.3 | 38/ 0/100%/11.2 |   45/  38
+```
+
+**Metrics Control:**
+- Heartbeat messages are automatically excluded from send metrics
+- Global metrics can be disabled for performance: `ESP32RemoteControl::enableGlobalMetrics(false)`
+- Metrics display warning appears when disabled
 
 ### Operating Modes
 
 **Reliable Mode (default)**:
 ```cpp
-ESP32RemoteControl* controller = ESP32RemoteControlFactory::create(false);  // fast_mode = false
+ESP32RemoteControl* controller = createProtocolInstance(ESP32_RC_PROTOCOL, false);  // fast_mode = false
 ```
-- Queued message transmission
+- Queued message transmission (up to 10 messages)
 - Guaranteed delivery attempts
 - Higher latency (~10-50ms)
 
 **Fast Mode**:
 ```cpp
-ESP32RemoteControl* controller = ESP32RemoteControlFactory::create(true);   // fast_mode = true
+ESP32RemoteControl* controller = createProtocolInstance(ESP32_RC_PROTOCOL, true);   // fast_mode = true
 ```
-- Immediate transmission
+- Single message queue (overwrites previous)
 - Minimal latency (~1-5ms)
 - No delivery guarantees
 

@@ -18,15 +18,11 @@ void onDataReceived(const RCMessage_t& msg) {
   // Extract payload from message
   const RCPayload_t* payload = msg.getPayload();
   
-  // Forward raw payload bytes to serial
-  const uint8_t* raw_data = reinterpret_cast<const uint8_t*>(payload);
-  Serial.write(raw_data, sizeof(RCPayload_t));
-  
-  Serial.print("Received: ");
-  for (size_t i = 0; i < sizeof(RCPayload_t); i++) {
-    Serial.printf("%02X ", raw_data[i]);
-  }
-  Serial.println();
+  // Output structured text data with unique flag
+  Serial.printf("RC_DATA:%d,%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%d\n",
+    payload->id1, payload->id2, payload->id3, payload->id4,
+    payload->value1, payload->value2, payload->value3, payload->value4, payload->value5,
+    payload->flags);
 }
 
 void setup() {
@@ -57,35 +53,47 @@ void loop() {
   
   // Read serial input and forward to ESPNOW
   if (Serial.available()) {
-    // Read serial data into buffer
-    uint8_t buffer[25];  // RCPayload_t size
-    size_t bytes_read = 0;
+    String line = Serial.readStringUntil('\n');
+    line.trim();
     
-    // Read up to 25 bytes from serial
-    while (Serial.available() && bytes_read < sizeof(buffer)) {
-      buffer[bytes_read] = Serial.read();
-      bytes_read++;
-    }
-    
-    if (bytes_read > 0) {
-      // Map serial data to RCPayload_t structure
+    if (line.length() > 0) {
+      // Parse CSV format: id1,id2,id3,id4,value1,value2,value3,value4,value5,flags
       RCPayload_t payload = {0};
       
-      // Simple mapping: copy bytes directly to payload structure
-      if (bytes_read >= sizeof(RCPayload_t)) {
-        memcpy(&payload, buffer, sizeof(RCPayload_t));
-      } else {
-        // If less data, copy what we have
-        memcpy(&payload, buffer, bytes_read);
+      // Parse CSV values
+      int field_count = 0;
+      int start_index = 0;
+      
+      for (int i = 0; i <= line.length(); i++) {
+        if (i == line.length() || line[i] == ',') {
+          String field = line.substring(start_index, i);
+          
+          switch (field_count) {
+            case 0: payload.id1 = field.toInt(); break;
+            case 1: payload.id2 = field.toInt(); break;
+            case 2: payload.id3 = field.toInt(); break;
+            case 3: payload.id4 = field.toInt(); break;
+            case 4: payload.value1 = field.toFloat(); break;
+            case 5: payload.value2 = field.toFloat(); break;
+            case 6: payload.value3 = field.toFloat(); break;
+            case 7: payload.value4 = field.toFloat(); break;
+            case 8: payload.value5 = field.toFloat(); break;
+            case 9: payload.flags = field.toInt(); break;
+          }
+          field_count++;
+          start_index = i + 1;
+        }
       }
       
-      // Send via ESPNOW
-      if (espnow_controller->sendData(payload)) {
-        Serial.print("Sent: ");
-        for (size_t i = 0; i < bytes_read; i++) {
-          Serial.printf("%02X ", buffer[i]);
+      // Send via ESPNOW if we got at least the basic fields
+      if (field_count >= 6) {
+        if (espnow_controller->sendData(payload)) {
+          // Output structured text data with unique flag for sent data
+          Serial.printf("RC_SENT:%d,%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%d\n",
+            payload.id1, payload.id2, payload.id3, payload.id4,
+            payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
+            payload.flags);
         }
-        Serial.println();
       }
     }
   }
@@ -93,5 +101,5 @@ void loop() {
   // Incoming ESPNOW data is now handled by callback (onDataReceived)
   // No need for polling recvData() anymore
   
-  delay(1);
+  DELAY(1);
 }

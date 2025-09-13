@@ -142,11 +142,19 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t &msg) {
     if (sendResult != ESP_OK) {
       LOG_ERROR("ESP-NOW send failed after %d retries: %s", MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
       send_metrics_.addFailure();  // Track failed transmission
+    } else {
+      //  set flag - this is not heartbeat message
+      if (! _ring.push(false)) return ;  
+      LOG_DEBUG("ESP-NOW sent message type %d successfully", msg.type);
     }
     // Note: Success metrics tracked in delivery callback (onDataSentInternal)
   } else if (sendResult != ESP_OK) {
     // Still log heartbeat errors but don't include in metrics
     LOG_ERROR("ESP-NOW heartbeat send failed after %d retries: %s", MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
+  } else {
+    // set flag - this is heartbeat message
+    if (! _ring.push(true)) return ;  
+    LOG_DEBUG("ESP-NOW heartbeat sent successfully");
   }
 }
 
@@ -356,7 +364,10 @@ RCMessage_t ESP32_RC_ESPNOW::parseRawData(const uint8_t *data, size_t len) {
  */
 void ESP32_RC_ESPNOW::onDataSentInternal(const uint8_t *mac, esp_now_send_status_t status) {
   // If boradcast, no metrics update 
-  if (memcmp(mac, (const uint8_t[6])RC_BROADCAST_MAC, 6) != 0) {
+  bool is_heartbeat; 
+  _ring.pop(is_heartbeat);   
+  //if (memcmp(mac, (const uint8_t[6])RC_BROADCAST_MAC, 6) != 0 ) {
+  if (!is_heartbeat) {
     // Track actual delivery success/failure in metrics
     if (status == ESP_NOW_SEND_SUCCESS) {
       LOG_DEBUG("ESP-NOW message delivered successfully");
