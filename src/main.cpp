@@ -101,5 +101,5 @@ void loop() {
   // Incoming ESPNOW data is now handled by callback (onDataReceived)
   // No need for polling recvData() anymore
   
-  DELAY(1);
+  delay(1);
 }
