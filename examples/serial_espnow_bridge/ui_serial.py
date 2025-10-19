@@ -16,7 +16,7 @@ import time
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, TextIO
 
 try:  # Prefer PyQt5 but fall back to PySide6 if available.
     from PyQt5 import QtCore, QtGui, QtWidgets  # type: ignore
@@ -36,6 +36,30 @@ except ImportError:
 
 import serial
 import serial.tools.list_ports
+
+
+def apply_light_palette(app: QtWidgets.QApplication) -> None:
+    """Force a high-contrast light palette regardless of the OS theme."""
+    app.setStyle("Fusion")
+    palette = app.style().standardPalette()
+    palette.setColor(QtGui.QPalette.Window, QtGui.QColor("#f5f5f5"))
+    palette.setColor(QtGui.QPalette.WindowText, QtCore.Qt.black)
+    palette.setColor(QtGui.QPalette.Base, QtGui.QColor("#ffffff"))
+    palette.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor("#e9e9e9"))
+    palette.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor("#ffffff"))
+    palette.setColor(QtGui.QPalette.ToolTipText, QtCore.Qt.black)
+    palette.setColor(QtGui.QPalette.Text, QtCore.Qt.black)
+    palette.setColor(QtGui.QPalette.Button, QtGui.QColor("#f5f5f5"))
+    palette.setColor(QtGui.QPalette.ButtonText, QtCore.Qt.black)
+    palette.setColor(QtGui.QPalette.BrightText, QtCore.Qt.red)
+    palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor("#3875d6"))
+    palette.setColor(QtGui.QPalette.HighlightedText, QtCore.Qt.white)
+    if hasattr(QtGui.QPalette, "PlaceholderText"):
+        palette.setColor(QtGui.QPalette.PlaceholderText, QtGui.QColor("#707070"))
+    app.setPalette(palette)
+    app.setStyleSheet(
+        "QToolTip { color: #000000; background-color: #fefefe; border: 1px solid #b0b0b0; }"
+    )
 
 
 def format_float(value: float) -> str:
@@ -437,6 +461,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._default_port = default_port
         self.setWindowTitle("ESP32 Remote Control - Serial UI")
         self.resize(760, 680)
+        self.setMaximumHeight(900)
 
         self.manager = SerialManager(config)
         self.manager.log_received.connect(self.on_log_received)
@@ -444,15 +469,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self.manager.status_changed.connect(self.on_status_changed)
         self.manager.packet_sent.connect(self.on_packet_sent)
 
-        self.log_entries = deque(maxlen=200)
+        self.input_entries = deque(maxlen=200)
+        self.output_entries = deque(maxlen=200)
 
         self.byte_controls: Dict[str, QtWidgets.QSpinBox] = {}
         self.float_controls: Dict[str, QtWidgets.QDoubleSpinBox] = {}
         self.flag_controls: Dict[str, QtWidgets.QCheckBox] = {}
 
+        self.status_port_text = "--"
+        self.status_packet_text = "No packets sent yet."
+        self.status_error_text = "None."
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        self._input_log_path = Path.cwd() / f"bridge_input_{timestamp}.txt"
+        self._output_log_path = Path.cwd() / f"bridge_output_{timestamp}.txt"
+        self._input_log_file = self._open_log_file(self._input_log_path)
+        self._output_log_file = self._open_log_file(self._output_log_path)
+
         central = QtWidgets.QWidget(self)
         self.setCentralWidget(central)
         outer_layout = QtWidgets.QVBoxLayout(central)
+        outer_layout.setContentsMargins(8, 8, 8, 8)
+        outer_layout.setSpacing(8)
 
         connection_group = self._build_connection_group(default_baud)
         outer_layout.addWidget(connection_group)
@@ -472,14 +510,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.send_group = self._build_send_controls()
         outer_layout.addWidget(self.send_group)
-        self.status_group = self._build_status_group()
-        outer_layout.addWidget(self.status_group)
         self.log_group = self._build_log_view()
         outer_layout.addWidget(self.log_group)
 
         self.auto_timer = QtCore.QTimer(self)
         self.auto_timer.setSingleShot(True)
         self.auto_timer.timeout.connect(self._auto_send_timeout)
+
+        self._refresh_status_bar()
 
         if default_port:
             self.port_combo.setCurrentText(default_port)
@@ -580,7 +618,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_flag_group(self) -> QtWidgets.QGroupBox:
         group = QtWidgets.QGroupBox("Flag Channels", self)
         layout = QtWidgets.QGridLayout(group)
-        columns = 2
+        columns = 4
         for idx, field in enumerate(self.config.flag_fields):
             row = idx // columns
             col = idx % columns
@@ -604,17 +642,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_send_controls(self) -> QtWidgets.QGroupBox:
         group = QtWidgets.QGroupBox("Send Control", self)
-        layout = QtWidgets.QGridLayout(group)
+        layout = QtWidgets.QHBoxLayout(group)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(8)
         self.auto_send_check = QtWidgets.QCheckBox("Auto send on change")
-        layout.addWidget(self.auto_send_check, 0, 0, 1, 2)
-        self.send_button = QtWidgets.QPushButton("Send Packet")
+        layout.addWidget(self.auto_send_check)
+        self.send_button = QtWidgets.QPushButton("Manual Sent Package")
         self.send_button.clicked.connect(self.send_manual)
-        layout.addWidget(self.send_button, 1, 0)
-        self.auto_hint_label = QtWidgets.QLabel(
-            "Manual mode: press Send Packet to transmit."
-        )
-        layout.addWidget(self.auto_hint_label, 1, 1)
+        layout.addWidget(self.send_button)
+        layout.addStretch()
         self.auto_send_check.stateChanged.connect(self.on_auto_mode_toggled)
+        self.send_button.setEnabled(not self.auto_send_check.isChecked())
         for widget in self._inputs_for_auto():
             if isinstance(widget, QtWidgets.QDoubleSpinBox):
                 widget.valueChanged.connect(self.on_input_changed)
@@ -624,33 +662,45 @@ class MainWindow(QtWidgets.QMainWindow):
                 widget.stateChanged.connect(self.on_checkbox_changed)
             if isinstance(widget, QtWidgets.QAbstractSpinBox):
                 widget.editingFinished.connect(self.on_spin_editing_finished)
-        return group
-
-    def _build_status_group(self) -> QtWidgets.QGroupBox:
-        group = QtWidgets.QGroupBox("Status", self)
-        layout = QtWidgets.QGridLayout(group)
-        layout.addWidget(QtWidgets.QLabel("Serial Port:"), 0, 0)
-        self.status_port_label = QtWidgets.QLabel("--")
-        layout.addWidget(self.status_port_label, 0, 1)
-        layout.addWidget(QtWidgets.QLabel("Last Packet:"), 1, 0)
-        self.status_packet_label = QtWidgets.QLabel("No packets sent yet.")
-        self.status_packet_label.setWordWrap(True)
-        layout.addWidget(self.status_packet_label, 1, 1)
-        layout.addWidget(QtWidgets.QLabel("Errors:"), 2, 0)
-        self.status_error_label = QtWidgets.QLabel("None.")
-        self.status_error_label.setWordWrap(True)
-        layout.addWidget(self.status_error_label, 2, 1)
+        group.setSizePolicy(
+            QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        )
+        self._set_compact_group_height(group, [self.auto_send_check, self.send_button])
         return group
 
     def _build_log_view(self) -> QtWidgets.QGroupBox:
-        group = QtWidgets.QGroupBox("Bridge Output", self)
-        layout = QtWidgets.QVBoxLayout(group)
-        self.log_view = QtWidgets.QPlainTextEdit(group)
-        self.log_view.setReadOnly(True)
-        self.log_view.setMaximumBlockCount(1200)
-        self.log_view.setMinimumHeight(260)
-        self.log_view.setPlaceholderText("Waiting for data...")
-        layout.addWidget(self.log_view)
+        group = QtWidgets.QGroupBox("Bridge Logs", self)
+        layout = QtWidgets.QHBoxLayout(group)
+        group.setSizePolicy(
+            QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        )
+
+        input_box = QtWidgets.QGroupBox("Bridge Input", group)
+        input_box.setSizePolicy(
+            QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        )
+        input_layout = QtWidgets.QVBoxLayout(input_box)
+        self.input_log_view = QtWidgets.QPlainTextEdit(input_box)
+        self.input_log_view.setReadOnly(True)
+        self.input_log_view.setMaximumBlockCount(600)
+        self.input_log_view.setPlaceholderText("Packets sent to the bridge will appear here.")
+        self._set_log_view_rows(self.input_log_view, 6)
+        input_layout.addWidget(self.input_log_view)
+        layout.addWidget(input_box)
+
+        output_box = QtWidgets.QGroupBox("Bridge Output", group)
+        output_box.setSizePolicy(
+            QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        )
+        output_layout = QtWidgets.QVBoxLayout(output_box)
+        self.output_log_view = QtWidgets.QPlainTextEdit(output_box)
+        self.output_log_view.setReadOnly(True)
+        self.output_log_view.setMaximumBlockCount(200)
+        self.output_log_view.setPlaceholderText("Waiting for data from the remote ESP...")
+        self._set_log_view_rows(self.output_log_view, 6)
+        output_layout.addWidget(self.output_log_view)
+        layout.addWidget(output_box)
+
         return group
 
     def _inputs_for_auto(self) -> List[QtWidgets.QWidget]:
@@ -666,7 +716,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.float_group,
             self.flag_group,
             self.send_group,
-            self.status_group,
             self.log_group,
         ]
         for widget in targets:
@@ -699,7 +748,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.manager.is_open():
             self.manager.close()
             self.connect_button.setText("Connect")
-            self.status_error_label.setText("None.")
+            self._set_status_error("None.")
             self._set_interaction_enabled(False)
             return
         port = self._selected_port()
@@ -718,6 +767,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._set_interaction_enabled(True)
         self.connect_button.setText("Disconnect")
+        self._set_status_error("None.")
         if self.auto_send_check.isChecked():
             self.schedule_auto_send(immediate=True)
 
@@ -822,11 +872,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def on_auto_mode_toggled(self, state: int) -> None:
         auto_mode = state == QtCore.Qt.Checked
         self.send_button.setEnabled(not auto_mode)
-        self.auto_hint_label.setText(
-            "Auto mode: changes send within ~100ms."
-            if auto_mode
-            else "Manual mode: press Send Packet to transmit."
-        )
         if auto_mode and self.manager.is_open():
             self.schedule_auto_send(immediate=True)
         else:
@@ -842,20 +887,20 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             record = self.manager.send_payload(payload)
         except ValueError as exc:
-            self.status_error_label.setText(str(exc))
+            self._set_status_error(str(exc))
             if source == "manual":
                 QtWidgets.QMessageBox.critical(self, "Send Packet", str(exc))
             return
-        self.status_error_label.setText("None.")
+        self._set_status_error("None.")
         self._update_last_packet(record)
 
     @Slot(object, int)
     def on_status_changed(self, port: Optional[str], baud: int) -> None:
         if port:
-            self.status_port_label.setText(f"{port} @ {baud}")
+            self._set_status_port(f"{port} @ {baud}")
             self._set_interaction_enabled(True)
         else:
-            self.status_port_label.setText("--")
+            self._set_status_port("--")
             self.connect_button.setText("Connect")
             self.auto_timer.stop()
             self._set_interaction_enabled(False)
@@ -863,6 +908,18 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot(dict)
     def on_packet_sent(self, record: Dict[str, Any]) -> None:
         self._update_last_packet(record)
+        raw = record.get("raw")
+        if raw:
+            timestamp = time.strftime("%H:%M:%S")
+            entry = f"[{timestamp}] {raw}"
+            self.input_entries.append(entry)
+            self.input_log_view.appendPlainText(entry)
+            if self._input_log_file:
+                try:
+                    self._input_log_file.write(entry + "\n")
+                    self._input_log_file.flush()
+                except OSError:
+                    self._input_log_file = None
 
     def _update_last_packet(self, record: Dict[str, Any]) -> None:
         parts: List[str] = []
@@ -880,24 +937,100 @@ class MainWindow(QtWidgets.QMainWindow):
         sent_at = record.get("sent_at")
         if sent_at:
             summary = f"{summary} @ {sent_at}"
-        self.status_packet_label.setText(summary)
+        self._set_status_packet(summary)
 
     @Slot(str)
     def on_log_received(self, line: str) -> None:
         timestamp = time.strftime("%H:%M:%S")
         entry = f"[{timestamp}] {line}"
-        self.log_entries.append(entry)
-        self.log_view.appendPlainText(entry)
+        self.output_entries.append(entry)
+        self.output_log_view.appendPlainText(entry)
+        if self._output_log_file:
+            try:
+                self._output_log_file.write(entry + "\n")
+                self._output_log_file.flush()
+            except OSError:
+                self._output_log_file = None
 
     @Slot(str)
     def on_serial_error(self, message: str) -> None:
-        self.status_error_label.setText(message)
+        self._set_status_error(message)
         QtWidgets.QMessageBox.critical(self, "Serial Error", message)
         self.manager.close()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[name-defined]
         self.manager.close()
+        for handle in (self._input_log_file, self._output_log_file):
+            if handle:
+                try:
+                    handle.close()
+                except OSError:
+                    pass
         super().closeEvent(event)
+
+    def _open_log_file(self, path: Path) -> Optional[TextIO]:
+        try:
+            return path.open("w", encoding="utf-8")
+        except OSError as exc:
+            print(f"Warning: unable to open log file '{path}': {exc}", file=sys.stderr)
+            return None
+
+    def _set_log_view_rows(
+        self, widget: QtWidgets.QPlainTextEdit, rows: int
+    ) -> None:
+        widget.setSizePolicy(
+            QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        )
+        font_metrics = widget.fontMetrics()
+        line_height = font_metrics.lineSpacing()
+        margins = widget.contentsMargins()
+        frame = widget.frameWidth()
+        desired_height = (
+            line_height * rows
+            + margins.top()
+            + margins.bottom()
+            + frame * 2
+            + int(widget.document().documentMargin() * 2)
+        )
+        widget.setFixedHeight(desired_height)
+
+    def _set_compact_group_height(
+        self, group: QtWidgets.QGroupBox, widgets: Sequence[QtWidgets.QWidget]
+    ) -> None:
+        effective_widgets = [widget for widget in widgets if widget is not None]
+        if not effective_widgets:
+            return
+        row_height = max(widget.sizeHint().height() for widget in effective_widgets)
+        layout = group.layout()
+        if layout is not None:
+            margins = layout.contentsMargins()
+        else:
+            margins = QtCore.QMargins()
+        frame = group.style().pixelMetric(QtWidgets.QStyle.PM_DefaultFrameWidth, None, group)
+        title_height = group.fontMetrics().height() if group.title() else 0
+        total = row_height + margins.top() + margins.bottom() + frame * 2 + title_height
+        group.setFixedHeight(total)
+
+    def _set_status_port(self, text: str) -> None:
+        self.status_port_text = text
+        self._refresh_status_bar()
+
+    def _set_status_packet(self, text: str) -> None:
+        self.status_packet_text = text
+        self._refresh_status_bar()
+
+    def _set_status_error(self, text: str) -> None:
+        self.status_error_text = text
+        self._refresh_status_bar()
+
+    def _refresh_status_bar(self) -> None:
+        parts = [f"Port: {self.status_port_text}"]
+        if self.status_packet_text:
+            parts.append(f"Last: {self.status_packet_text}")
+        if self.status_error_text:
+            parts.append(f"Error: {self.status_error_text}")
+        message = " | ".join(parts)
+        self.statusBar().showMessage(message)
 
 
 def parse_args() -> argparse.Namespace:
@@ -933,6 +1066,7 @@ def main() -> None:
     config = ChannelConfig.from_file(config_path)
 
     app = QtWidgets.QApplication(sys.argv)
+    apply_light_palette(app)
     window = MainWindow(
         config,
         args.port,
@@ -941,9 +1075,8 @@ def main() -> None:
     )
     window.show()
 
-    QtCore.QTimer.singleShot(0, lambda: window.status_error_label.setText("None."))
     app.aboutToQuit.connect(window.manager.close)
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
