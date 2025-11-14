@@ -1,123 +1,166 @@
-{
-  "bytes": [
-    {
-      "key": "message_type",
-      "label": "Message Type (id1)",
-      "default": 177,
-      "min": 0,
-      "max": 255
-    },
-    {
-      "key": "robot_id",
-      "label": "Robot ID (id2)",
-      "default": 1,
-      "min": 0,
-      "max": 255
-    },
-    {
-      "key": "loop_time_ms",
-      "label": "Loop Time (ms, id3)",
-      "default": 10,
-      "min": 0,
-      "max": 255
-    },
-    {
-      "key": "profile_slot",
-      "label": "Profile Slot (id4)",
-      "default": 0,
-      "min": 0,
-      "max": 255
-    }
-  ],
-  "floats": [
-    {
-      "key": "kp",
-      "label": "Kp",
-      "default": 35.0,
-      "min": 0.0,
-      "max": 1000.0,
-      "step": 0.01,
-      "decimals": 2
-    },
-    {
-      "key": "ki",
-      "label": "Ki",
-      "default": 0.0,
-      "min": -10.0,
-      "max": 10.0,
-      "step": 0.01,
-      "decimals": 2
-    },
-    {
-      "key": "kd",
-      "label": "Kd",
-      "default": 0.85,
-      "min": 0.0,
-      "max": 100.0,
-      "step": 0.01,
-      "decimals": 2
-    },
-    {
-      "key": "target_angle",
-      "label": "Target Angle (deg)",
-      "default": 0.0,
-      "min": -45.0,
-      "max": 45.0,
-      "step": 0.01,
-      "decimals": 2
-    },
-    {
-      "key": "max_output",
-      "label": "Max Output",
-      "default": 1.0,
-      "min": 0.0,
-      "max": 5.0,
-      "step": 0.01,
-      "decimals": 2
-    }
-  ],
-  "flags": [
-    {
-      "key": "enable_motors",
-      "label": "Enable motors",
-      "bit": 0,
-      "default": true
-    },
-    {
-      "key": "persist",
-      "label": "Persist to flash",
-      "bit": 1,
-      "default": false
-    },
-    {
-      "key": "trigger_calibration",
-      "label": "Run IMU calibration",
-      "bit": 2,
-      "default": false
-    },
-    {
-      "key": "flag_bit_3",
-      "label": "Flag Bit 3",
-      "bit": 3,
-      "default": false
-    },
-    {
-      "key": "flag_bit_4",
-      "label": "Flag Bit 4",
-      "bit": 4,
-      "default": false
-    },
-    {
-      "key": "flag_bit_5",
-      "label": "Flag Bit 5",
-      "bit": 5,
-      "default": false
-    },
-    {
-      "key": "flag_bit_6",
-      "label": "Flag Bit 6",
-      "bit": 6,
-      "default": false
-    }
-  ]
+﻿{
+    "log_output_directory":  "r:/temp2/logs",
+    "bytes":  [
+                  {
+                      "key":  "message_type",
+                      "label":  "Message Type (id1)",
+                      "default":  177,
+                      "min":  0,
+                      "max":  255
+                  },
+                  {
+                      "key":  "robot_id",
+                      "label":  "Robot ID (id2)",
+                      "default":  1,
+                      "min":  0,
+                      "max":  255
+                  },
+                  {
+                      "key":  "loop_time_ms",
+                      "label":  "Loop Time (ms, id3)",
+                      "default":  10,
+                      "min":  0,
+                      "max":  255
+                  },
+                  {
+                      "key":  "profile_slot",
+                      "label":  "Profile Slot (id4)",
+                      "default":  0,
+                      "min":  0,
+                      "max":  255
+                  }
+              ],
+    "floats":  [
+                   {
+                       "key":  "kp",
+                       "label":  "Kp",
+                       "default":  35.0,
+                       "min":  0.0,
+                       "max":  1000.0,
+                       "step":  0.01,
+                       "decimals":  2
+                   },
+                   {
+                       "key":  "ki",
+                       "label":  "Ki",
+                       "default":  0.0,
+                       "min":  -10.0,
+                       "max":  10.0,
+                       "step":  0.01,
+                       "decimals":  2
+                   },
+                   {
+                       "key":  "kd",
+                       "label":  "Kd",
+                       "default":  0.85,
+                       "min":  0.0,
+                       "max":  100.0,
+                       "step":  0.01,
+                       "decimals":  2
+                   },
+                   {
+                       "key":  "target_angle",
+                       "label":  "Target Angle (deg)",
+                       "default":  0.0,
+                       "min":  -45.0,
+                       "max":  45.0,
+                       "step":  0.01,
+                       "decimals":  2,
+                       "joystick":  {
+                                        "axis":  0,
+                                        "invert":  false,
+                                        "deadzone":  0.10
+                                    }
+                   },
+                   {
+                       "key":  "max_output",
+                       "label":  "Max Output",
+                       "default":  1.0,
+                       "min":  0.0,
+                       "max":  5.0,
+                       "step":  0.01,
+                       "decimals":  2,
+                       "joystick":  {
+                                        "axis":  5,
+                                        "invert":  false,
+                                        "deadzone":  0.00
+                                    }
+                   }
+               ],
+    "flags":  [
+                  {
+                      "key":  "enable_motors",
+                      "label":  "Enable motors",
+                      "bit":  0,
+                      "default":  true,
+                      "joystick":  {
+                                       "button":  5
+                                   }
+                  },
+                  {
+                      "key":  "persist",
+                      "label":  "Persist to flash",
+                      "bit":  1,
+                      "default":  false,
+                      "joystick":  {
+                                       "button":  1
+                                   }
+                  },
+                  {
+                      "key":  "trigger_calibration",
+                      "label":  "Run IMU calibration",
+                      "bit":  2,
+                      "default":  false,
+                      "joystick":  {
+                                       "button":  3
+                                   }
+                  },
+                  {
+                      "key":  "flag_bit_3",
+                      "label":  "Flag Bit 3",
+                      "bit":  3,
+                      "default":  false
+                  },
+                  {
+                      "key":  "flag_bit_4",
+                      "label":  "Flag Bit 4",
+                      "bit":  4,
+                      "default":  false
+                  },
+                  {
+                      "key":  "flag_bit_5",
+                      "label":  "Flag Bit 5",
+                      "bit":  5,
+                      "default":  false
+                  },
+                  {
+                      "key":  "flag_bit_6",
+                      "label":  "Flag Bit 6",
+                      "bit":  6,
+                      "default":  false
+                  }
+              ],
+    "joystick_button_map":  {
+                                "button1":  0,
+                                "button2":  1,
+                                "button3":  2,
+                                "button4":  3,
+                                "l1":  4,
+                                "r1":  5,
+                                "l2":  6,
+                                "r2":  7,
+                                "select":  8,
+                                "start":  9,
+                                "l3":  10,
+                                "l4":  11,
+                                "r3":  11,
+                                "axes":  {
+                                             "lx":  0,
+                                             "ly":  1,
+                                             "rx":  3,
+                                             "ry":  2,
+                                             "dpad_x":  4,
+                                             "dpad_y":  5
+                                         }
+                            }
 }

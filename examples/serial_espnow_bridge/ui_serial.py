@@ -83,11 +83,20 @@ class ChannelConfig:
         self.byte_fields = self._normalize_byte_fields(data.get("bytes", []))
         self.float_fields = self._normalize_float_fields(data.get("floats", []))
         self.flag_fields = self._normalize_flag_fields(data.get("flags", []))
+        log_dir_raw = data.get("log_output_directory")
+        if log_dir_raw:
+            log_dir = Path(log_dir_raw)
+            if not log_dir.is_absolute():
+                log_dir = self.source.parent / log_dir
+            self.log_output_directory: Optional[Path] = log_dir
+        else:
+            self.log_output_directory = None
 
     @classmethod
     def from_file(cls, path: Path) -> "ChannelConfig":
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
+            # Use BOM-tolerant decoder to accept files saved with UTF-8 BOM
+            raw = json.loads(path.read_text(encoding="utf-8-sig"))
         except OSError as exc:
             raise SystemExit(f"Unable to read channel config '{path}': {exc}") from exc
         except json.JSONDecodeError as exc:
@@ -448,6 +457,7 @@ class SerialManager(QtCore.QObject):
 
 class MainWindow(QtWidgets.QMainWindow):
     AUTO_SEND_DELAY_MS = 100
+    DISABLED_OPACITY = 0.45
 
     def __init__(
         self,
@@ -460,8 +470,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.config = config
         self._default_port = default_port
         self.setWindowTitle("ESP32 Remote Control - Serial UI")
-        self.resize(760, 680)
-        self.setMaximumHeight(900)
 
         self.manager = SerialManager(config)
         self.manager.log_received.connect(self.on_log_received)
@@ -481,16 +489,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_error_text = "None."
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        self._input_log_path = Path.cwd() / f"bridge_input_{timestamp}.txt"
-        self._output_log_path = Path.cwd() / f"bridge_output_{timestamp}.txt"
+        log_directory = self.config.log_output_directory or Path.cwd()
+        try:
+            log_directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(
+                f"Warning: unable to create log directory '{log_directory}': {exc}",
+                file=sys.stderr,
+            )
+            log_directory = Path.cwd()
+        self._log_directory = log_directory
+        self._input_log_path = log_directory / f"bridge_input_{timestamp}.txt"
+        self._output_log_path = log_directory / f"bridge_output_{timestamp}.txt"
         self._input_log_file = self._open_log_file(self._input_log_path)
         self._output_log_file = self._open_log_file(self._output_log_path)
 
         central = QtWidgets.QWidget(self)
         self.setCentralWidget(central)
         outer_layout = QtWidgets.QVBoxLayout(central)
-        outer_layout.setContentsMargins(8, 8, 8, 8)
-        outer_layout.setSpacing(8)
+        outer_layout.setContentsMargins(6, 6, 6, 6)
+        outer_layout.setSpacing(6)
 
         connection_group = self._build_connection_group(default_baud)
         outer_layout.addWidget(connection_group)
@@ -518,6 +536,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto_timer.timeout.connect(self._auto_send_timeout)
 
         self._refresh_status_bar()
+        self.statusBar().setSizeGripEnabled(False)
+
+        self.adjustSize()
+        size_hint = self.sizeHint()
+        desired_width = max(720, size_hint.width())
+        self.setFixedSize(desired_width, size_hint.height())
 
         if default_port:
             self.port_combo.setCurrentText(default_port)
@@ -529,6 +553,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_connection_group(self, default_baud: int) -> QtWidgets.QGroupBox:
         group = QtWidgets.QGroupBox("Connection", self)
         layout = QtWidgets.QGridLayout(group)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setHorizontalSpacing(6)
+        layout.setVerticalSpacing(4)
 
         layout.addWidget(QtWidgets.QLabel("Port:", group), 0, 0)
         self.port_combo = QtWidgets.QComboBox(group)
@@ -560,6 +587,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_byte_group(self) -> QtWidgets.QGroupBox:
         group = QtWidgets.QGroupBox("Int Channels (id1-id4)", self)
         layout = QtWidgets.QGridLayout(group)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setHorizontalSpacing(6)
+        layout.setVerticalSpacing(4)
         for idx, field in enumerate(self.config.byte_fields):
             row = idx // 2
             col = (idx % 2) * 2
@@ -588,6 +618,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_float_group(self) -> QtWidgets.QGroupBox:
         group = QtWidgets.QGroupBox("Float Channels (value1-value5)", self)
         layout = QtWidgets.QGridLayout(group)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setHorizontalSpacing(6)
+        layout.setVerticalSpacing(4)
         columns = 3
         for idx, field in enumerate(self.config.float_fields):
             row = idx // columns
@@ -618,6 +651,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_flag_group(self) -> QtWidgets.QGroupBox:
         group = QtWidgets.QGroupBox("Flag Channels", self)
         layout = QtWidgets.QGridLayout(group)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setHorizontalSpacing(6)
+        layout.setVerticalSpacing(4)
         columns = 4
         for idx, field in enumerate(self.config.flag_fields):
             row = idx // columns
@@ -671,6 +707,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_log_view(self) -> QtWidgets.QGroupBox:
         group = QtWidgets.QGroupBox("Bridge Logs", self)
         layout = QtWidgets.QHBoxLayout(group)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(6)
         group.setSizePolicy(
             QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
         )
@@ -680,11 +718,13 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
         )
         input_layout = QtWidgets.QVBoxLayout(input_box)
+        input_layout.setContentsMargins(6, 6, 6, 6)
+        input_layout.setSpacing(6)
         self.input_log_view = QtWidgets.QPlainTextEdit(input_box)
         self.input_log_view.setReadOnly(True)
         self.input_log_view.setMaximumBlockCount(600)
         self.input_log_view.setPlaceholderText("Packets sent to the bridge will appear here.")
-        self._set_log_view_rows(self.input_log_view, 6)
+        self._set_log_view_rows(self.input_log_view, 4)
         input_layout.addWidget(self.input_log_view)
         layout.addWidget(input_box)
 
@@ -693,11 +733,13 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
         )
         output_layout = QtWidgets.QVBoxLayout(output_box)
+        output_layout.setContentsMargins(6, 6, 6, 6)
+        output_layout.setSpacing(6)
         self.output_log_view = QtWidgets.QPlainTextEdit(output_box)
         self.output_log_view.setReadOnly(True)
         self.output_log_view.setMaximumBlockCount(200)
         self.output_log_view.setPlaceholderText("Waiting for data from the remote ESP...")
-        self._set_log_view_rows(self.output_log_view, 6)
+        self._set_log_view_rows(self.output_log_view, 4)
         output_layout.addWidget(self.output_log_view)
         layout.addWidget(output_box)
 
@@ -721,8 +763,28 @@ class MainWindow(QtWidgets.QMainWindow):
         for widget in targets:
             if widget is not None:
                 widget.setEnabled(enabled)
+                self._apply_disabled_effect(widget, enabled)
         if not enabled:
             self.auto_timer.stop()
+
+    def _apply_disabled_effect(self, widget: QtWidgets.QWidget, enabled: bool) -> None:
+        effect = widget.graphicsEffect()
+        if enabled:
+            if (
+                isinstance(effect, QtWidgets.QGraphicsOpacityEffect)
+                and effect.property("autoDisabledEffect")
+            ):
+                widget.setGraphicsEffect(None)
+        else:
+            if isinstance(effect, QtWidgets.QGraphicsOpacityEffect) and effect.property(
+                "autoDisabledEffect"
+            ):
+                effect.setOpacity(self.DISABLED_OPACITY)
+            else:
+                effect = QtWidgets.QGraphicsOpacityEffect(widget)
+                effect.setOpacity(self.DISABLED_OPACITY)
+                effect.setProperty("autoDisabledEffect", True)
+                widget.setGraphicsEffect(effect)
 
     @Slot()
     def refresh_ports(self) -> None:

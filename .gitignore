@@ -1,5 +1,6 @@
 # Ignore all __pycache__ folders recursively
 **/__pycache__/
+**/logs/
 
 .pio
 .vscode/.browse.c_cpp.db*

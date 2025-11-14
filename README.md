@@ -1,370 +1,223 @@
 # ESP32 Remote Control Library
 
-A versatile ESP32 wireless communication library that enables symmetric peer-to-peer communication using multiple wireless protocols. This library allows ESP32 devices to automatically discover each other and establish bi-directional communication without predefined master/slave roles.
+Symmetric peer-to-peer communication for ESP32 devices with automatic peer
+discovery, heartbeat-based connection management, and a unified API across
+multiple radios. Every node runs the same firmware and negotiates roles at
+runtime, so there is no master/slave split to maintain.
 
-## Protocol Design Overview
+## Highlights
 
-### Communication Architecture
-All protocols implement a unified 3-layer communication stack:
+- Single 32-byte message with a shared 25-byte payload structure for every
+  protocol
+- Automatic discovery, handshake, and connection monitoring with 100 ms
+  heartbeats and 300 ms timeouts
+- Switch transports at compile time through one macro while keeping the same API
+- Fast mode (single-slot queue) or reliable mode (10-slot queue with retries)
+- Lightweight performance metrics with sliding-window TPS calculation
+- Python utilities for rapid testing (keyboard controller, serial bridge UI)
 
-**Layer 1: Discovery & Handshake**
-- **ESP-NOW**: Direct MAC-based peer discovery using broadcast messages
-- **NRF24L01+**: Radio channel scanning with address exchange handshake protocol
+## Supported Protocols
 
-**Layer 2: Connection Management**
-- **Heartbeat System**: 100ms interval heartbeat messages for connection monitoring
-- **Timeout Handling**: 300ms connection timeout triggers automatic reconnection
-- **State Tracking**: Real-time connection states (DISCONNECTED/CONNECTING/CONNECTED/ERROR)
+| Protocol        | Status       | Notes                                                                           |
+|-----------------|--------------|---------------------------------------------------------------------------------|
+| ESP-NOW         | Stable       | Direct ESP32-to-ESP32 link with automatic peer addition and ack/retry handling |
+| nRF24L01+       | Stable       | 5-byte address handshake, pipe switching, compile-time pin/channel selection    |
+| WiFi Raw 802.11 | Experimental | Raw frame discovery plus UDP data channel, AP/STA negotiation at runtime        |
+| Bluetooth LE    | Planned      | Interface reserved for a future implementation                                  |
 
-**Layer 3: Data Transport**
-- **Standardized Packet**: 32-byte fixed-size messages across all protocols
-- **Address Routing**: 6-byte MAC address sender identification
-- **Payload Structure**: 25-byte structured data payload with type safety
+## Architecture at a Glance
 
-### Message Format
+- **Discovery layer**: broadcast ESP-NOW beacons, NRF24 handshake frames, or raw
+  802.11 vendor frames to locate peers.
+- **Connection layer**: role negotiation, heartbeat timers, and reconnection on
+  silence; exposes state via `getConnectionState()`.
+- **Transport layer**: fixed `RCMessage_t` container with helper accessors and
+  protocol-specific `lowLevelSend()` implementations.
+
 ```cpp
-// 32-byte message structure (consistent across all protocols)
-struct RCMessage_t {
-    uint8_t type;                   // Message type (DATA=0, HEARTBEAT=3)
-    uint8_t from_addr[6];          // Sender MAC address
-    RCPayload_t payload[25];       // Structured data payload
+struct RCPayload_t {
+  uint8_t id1, id2, id3, id4;
+  float value1, value2, value3, value4, value5;
+  uint8_t flags;
 };
 
-// 25-byte data payload
-struct RCPayload_t {
-    uint8_t id1, id2, id3, id4;    // Command/identifier bytes
-    float value1, value2, value3, value4, value5;  // Sensor/control values
-    uint8_t flags;                 // Status/control flags
+struct RCMessage_t {
+  uint8_t type;                  // RCMSG_TYPE_DATA or RCMSG_TYPE_HEARTBEAT
+  uint8_t from_addr[RC_ADDR_SIZE];
+  uint8_t payload[RC_PAYLOAD_MAX_SIZE];  // reinterpret_cast to RCPayload_t
 };
 ```
 
-### Protocol-Specific Implementation
+## Getting Started
 
-**ESP-NOW Protocol:**
-- **Discovery**: Broadcast ESP-NOW messages to `FF:FF:FF:FF:FF:FF`
-- **Pairing**: Automatic peer addition using `esp_now_add_peer()`
-- **Transport**: Direct device-to-device communication via ESP32 hardware
-- **Reliability**: Built-in ESP-NOW acknowledgments and retries
+### Requirements
 
-**NRF24L01+ Protocol:**
-- **Discovery**: Broadcasts on shared channel using 5-byte broadcast address `{0xF0,0xF0,0xF0,0xF0,0xAA}`
-- **Handshake**: Address exchange protocol converts 6-byte MAC to 5-byte NRF addresses
-- **Pipe Switching**: Dynamic switching between broadcast (discovery) and peer (data) pipes
-- **Transport**: Hardware automatic retries (5 attempts) with acknowledgment packets
+- PlatformIO 6.x or Arduino IDE with the ESP32 core
+- `esp32-common` helper library (installed automatically when listed in
+  `lib_deps`)
+- `nrf24/RF24` when compiling the nRF24L01+ protocol
 
+Add the library to your `platformio.ini`:
 
-## ⚠️ Protocol Status
+```ini
+[env:esp32]
+platform = espressif32
+board = esp32dev
+framework = arduino
+lib_deps =
+  https://github.com/gr82morozr/esp32-common.git
+  nrf24/RF24 @ ^1.4.11    ; required only for NRF24 builds
+```
 
-**Ready for Production:**
-- ✅ **ESP-NOW** - Direct peer-to-peer communication using ESP32's built-in ESP-NOW protocol
-- ✅ **NRF24L01+** - 2.4GHz radio communication using nRF24L01+ modules
+### Select a protocol
 
-**Under Development:**
-- 🔄 **WiFi TCP/UDP** - WiFi network-based communication protocol
-
-**Future Development:**
-- ❌ **Bluetooth LE** - Planned for future implementation
-
-## Key Features
-
-### Symmetric Communication
-- **No Master/Slave Roles**: All devices run identical code and automatically negotiate roles
-- **Automatic Peer Discovery**: Devices discover each other without manual configuration
-- **Bi-directional Communication**: Any device can send or receive data seamlessly
-
-### Protocol Abstraction
-- **Unified API**: Switch between protocols with a single line change
-- **Consistent Interface**: Same API regardless of underlying wireless technology
-- **Protocol-Specific Optimization**: Each protocol optimized for best performance
-
-### Advanced Features
-- **Real-time Metrics**: Success rates, throughput monitoring, and error tracking with TPS calculation
-- **Connection Management**: Automatic heartbeat system (100ms) and reconnection on failure (300ms timeout)
-- **Memory Efficient**: FreeRTOS queues and optimized message structures
-- **Fast/Reliable Modes**: Choose between low-latency (1 message queue) or guaranteed delivery (10 message queue)
-- **Global Metrics Control**: Enable/disable metrics calculation globally for performance optimization
-- **Heartbeat Exclusion**: Heartbeat messages excluded from send metrics to avoid skewing statistics
-- **Custom Payload Override**: Override RCPayload_t structure for protocol-specific optimizations
-
-## Quick Start
-
-### 1. Hardware Setup
-
-**For ESP-NOW (Recommended for beginners):**
-- 2x ESP32 development boards
-- No additional hardware required
-
-**For NRF24L01+:**
-- 2x ESP32 development boards  
-- 2x NRF24L01+ modules
-- Proper wiring (see Pin Configuration section)
-
-### 2. Protocol Selection
-
-Change the protocol in your main.cpp:
+Choose the protocol **before** including `esp32_rc_factory.h`. Only the selected
+transport is compiled, keeping the firmware focused.
 
 ```cpp
-// ESP-NOW Protocol (easiest setup)
-#define ESP32_RC_PROTOCOL RC_PROTO_ESPNOW
-
-// NRF24L01+ Protocol  
-#define ESP32_RC_PROTOCOL RC_PROTO_NRF24
-
+#define ESP32_RC_PROTOCOL RC_PROTO_ESPNOW   // or RC_PROTO_NRF24 / RC_PROTO_WIFI
 #include "esp32_rc_factory.h"
 ```
 
-### 3. Basic Usage
+### Minimal sketch
 
 ```cpp
 #include <Arduino.h>
+
+#define ESP32_RC_PROTOCOL RC_PROTO_ESPNOW
 #include "esp32_rc_factory.h"
 
-// Create controller instance
 ESP32RemoteControl* controller = nullptr;
 
-void onDataReceived(const RCMessage_t& msg) {
-    // Handle received data
-    const RCPayload_t* payload = msg.getPayload();
-    Serial.printf("Received: id1=%d, value1=%.2f\n", 
-                  payload->id1, payload->value1);
+void onMessage(const RCMessage_t& msg) {
+  const auto* payload = msg.getPayload();
+  Serial.printf("Peer flags: %u value1: %.2f\n", payload->flags, payload->value1);
 }
 
 void setup() {
-    Serial.begin(115200);
-    
-    // Create controller based on selected protocol  
-    controller = createProtocolInstance(ESP32_RC_PROTOCOL, false);
-    if (controller) {
-        controller->setOnRecieveMsgHandler(onDataReceived);
-        
-        // Start connection
-        controller->connect();
-        Serial.println("Connecting...");
-    } else {
-        Serial.println("Failed to create controller!");
-    }
+  Serial.begin(115200);
+  controller = createProtocolInstance(ESP32_RC_PROTOCOL, false); // false = reliable mode
+  if (!controller) {
+    Serial.println("Protocol not enabled in esp32_rc_user_config.h");
+    return;
+  }
+  controller->setOnRecieveMsgHandler(onMessage);
+  controller->connect();
 }
 
 void loop() {
-    // Send data every second
-    static uint32_t lastSend = 0;
-    if (millis() - lastSend > 1000) {
-        RCPayload_t payload = {0};
-        payload.id1 = 42;
-        payload.value1 = random(0, 100) / 100.0f;
-        
-        if (controller) {
-            controller->sendData(payload);
-        }
-        lastSend = millis();
-    }
-    
-    delay(10);
+  if (!controller) {
+    delay(1000);
+    return;
+  }
+
+  RCPayload_t payload = {};
+  payload.id1 = 0xAA;
+  payload.value1 = millis() / 1000.0f;
+  controller->sendData(payload);
+  delay(500);
 }
-```
-
-## Pin Configuration
-
-### NRF24L01+ Wiring
-
-```
-ESP32 Pin    →    NRF24L01+ Pin
-GPIO 17      →    CE
-GPIO 5       →    CSN (CS)
-GPIO 18      →    SCK
-GPIO 19      →    MISO
-GPIO 23      →    MOSI
-3.3V         →    VCC
-GND          →    GND
-```
-
-**Note**: NRF24L01+ modules require stable 3.3V power. Use decoupling capacitors if experiencing connection issues.
-
-### ESP-NOW Configuration
-
-ESP-NOW uses built-in ESP32 hardware - no external components required. Default channel is 2, configurable in `include/esp32_rc_user_config.h`.
-
-## Message Structure
-
-The library uses a standardized 32-byte message format:
-
-```cpp
-struct RCPayload_t {
-    uint8_t id1, id2, id3, id4;    // 4 ID bytes
-    float value1, value2, value3, value4, value5;  // 5 float values
-    uint8_t flags;                 // Status flags
-}; // Total: 25 bytes
-
-struct RCMessage_t {
-    uint8_t type;                  // Message type
-    uint8_t from_addr[6];          // Sender MAC address
-    uint8_t payload[25];           // Data payload
-}; // Total: 32 bytes
 ```
 
 ## Configuration
 
-### User Configuration (`include/esp32_rc_user_config.h`)
+All user-tunable settings live in `include/esp32_rc_user_config.h`:
 
-Common settings you may want to modify:
+- Select the active protocol with `ESP32_RC_PROTOCOL`
+- Configure nRF24L01+ pins, SPI bus, RF channel, data rate, and power level
+- Adjust WiFi discovery timeouts and UDP port
+- Set global logging level (`CURRENT_LOG_LEVEL`)
+- Override queue depths, retry counts, or heartbeat timings if needed
 
-```cpp
-// Protocol Selection
-#define ESP32_RC_PROTOCOL RC_PROTO_ESPNOW  // or RC_PROTO_NRF24, RC_PROTO_WIFI
+### Custom payloads
 
-// ESP-NOW Settings
-#define ESPNOW_CHANNEL        2            // Radio Channel (1-13)
-#define ESPNOW_OUTPUT_POWER   82           // TX Power (~20.5dBm)
-
-// NRF24L01+ Settings  
-#define NRF24_CHANNEL         76           // RF Channel (clear frequency)
-#define NRF24_DATA_RATE       RF24_1MBPS   // Speed vs Range balance
-#define NRF24_PA_LEVEL        RF24_PA_HIGH // TX Power level
-
-// WiFi Settings
-#define RC_WIFI_SSID          "ESP32_RC_Network"
-#define RC_WIFI_PASSWORD      "esp32remote"
-#define RC_WIFI_MODE          0            // 0=Auto, 1=Station, 2=AP
-#define RC_WIFI_PROTOCOL      1            // 0=TCP, 1=UDP
-#define RC_WIFI_PORT          12345
-
-// Pin Assignments (NRF24L01+)
-#define PIN_NRF_CE            17
-#define PIN_NRF_CSN           5
-#define PIN_NRF_SCK           18
-#define PIN_NRF_MISO          19
-#define PIN_NRF_MOSI          23
-```
-
-### Custom Payload Override
-
-For protocols that support larger packets (like ESP-NOW up to ~250 bytes), you can override the default 25-byte payload:
+The default payload is 25 bytes. If you need a different structure, redefine it
+*before* including any library headers:
 
 ```cpp
-// In esp32_rc_user_config.h (before any includes)
 #ifndef RC_PAYLOAD_T_DEFINED
 #define RC_PAYLOAD_T_DEFINED
-
 struct RCPayload_t {
-  uint8_t command_type;
-  float sensor_data[50];    // 200 bytes for ESP-NOW
-  uint8_t status_flags[4];
-  char debug_string[40];
-  // Total: ~245 bytes (within ESP-NOW limit)
+  uint8_t command;
+  float values[4];
+  uint16_t crc;
 };
-
-#undef RC_PAYLOAD_MAX_SIZE
+#undef  RC_PAYLOAD_MAX_SIZE
 #define RC_PAYLOAD_MAX_SIZE sizeof(RCPayload_t)
 #endif
 ```
 
-## Examples
+Make sure the new size fits within the limits of your chosen transport
+(ESP-NOW supports up to 250 bytes, NRF24 up to 32 bytes).
 
-The library includes several complete examples demonstrating different use cases:
+### Fast versus reliable mode
 
-### 1. Basic Protocol Examples
-- **`basic_espnow.cpp`** - Simple ESP-NOW communication
-- **`basic_nrf24.cpp`** - Simple NRF24L01+ communication  
-- **`basic_wifi.cpp`** - Simple WiFi communication
-- **`remote_blinkled.cpp`** - LED control demonstration
+- `fast_mode = false` (default): background queue of 10 messages with retries.
+- `fast_mode = true`: single-slot queue for minimum latency; new data replaces
+  pending packets.
 
-### 2. Keyboard Remote Control System
-Complete keyboard-controlled robot system with bidirectional communication:
+## Metrics and Diagnostics
 
-```bash
-# Run keyboard controller (connects to ESP32 bridge)
-python examples/keyboard_remote_control/keyboard_controller.py --port COM3
+- `ESP32RemoteControl::enableGlobalMetrics(bool)` toggles statistical tracking.
+- `controller->enableMetricsDisplay(true, 1000)` prints a summary every second.
+- Heartbeat packets are excluded from send metrics automatically.
+- `setOnDiscoveryHandler()` delivers discovery events for dashboards or logs.
 
-# Test automated command sequences
-python examples/keyboard_remote_control/test_demo.py --port COM3 --protocol espnow
-```
+Typical metrics output:
 
-**Controls:**
-- **Arrow Keys**: Movement control (Forward/Backward/Left/Right)
-- **Space Bar**: Stop/Stand still
-- **ESC**: Exit program
-
-### 3. Serial-ESPNOW Bridge
-Transparent bridge for raw data passthrough:
-
-```bash
-# Interactive bridge with dual windows
-python examples/serial_espnow_bridge/keyboard_serial.py
-```
-
-**Features:**
-- Text-based communication with unique flags (`RC_DATA:`, `RC_SENT:`)
-- Filters debug output from mixed serial streams
-- Dual-window interface (input + output)
-- Real-time bidirectional communication
-
-
-## Performance & Monitoring
-
-### Real-time Metrics
-Enable metrics to monitor performance:
-
-```cpp
-controller->enableMetricsDisplay(true, 1000);  // Display every 1000ms
-ESP32RemoteControl::enableGlobalMetrics(true); // Enable metrics calculation globally
-```
-
-Metrics include:
-- **Success Rate**: Percentage of successful transmissions
-- **Throughput**: Transactions per second (TPS) with sliding window calculation
-- **Connection Status**: Real-time connection state (CONN/DISC/CONN?/ERR)
-- **Error Tracking**: Failed transmission counts
-- **Protocol Info**: Current protocol and time since startup
-
-**Sample Output:**
 ```
 Time(s) | Protocol | Conn | Send(OK/Fail/Rate/TPS) | Recv(OK/Fail/Rate/TPS) | Total(Sent/Recv)
-     45 |  ESPNOW  | CONN | 42/ 3/ 93%/12.3 | 38/ 0/100%/11.2 |   45/  38
+     45 |  ESPNOW  | CONN | 42/ 3/ 93%/12.3        | 38/ 0/100%/11.2        |   45/  38
 ```
 
-**Metrics Control:**
-- Heartbeat messages are automatically excluded from send metrics
-- Global metrics can be disabled for performance: `ESP32RemoteControl::enableGlobalMetrics(false)`
-- Metrics display warning appears when disabled
+## Examples
 
-### Operating Modes
+- `examples/basic_espnow.cpp` – introductory ESP-NOW sender/receiver pair.
+- `examples/basic_nrf24.cpp` – nRF24L01+ handshake, queueing, and data flow.
+- `examples/basic_wifi.cpp` – raw 802.11 discovery with UDP transport.
+- `examples/callback/basic_espnow_callback.cpp` – receive callbacks instead of polling.
+- `examples/remote_blinkled.cpp` – payload-driven LED control sketch.
+- `examples/serial_espnow_bridge/serial_espnow_bridge.cpp` – USB-to-ESP-NOW bridge firmware.
+- `examples/keyboard_remote_control/keyboard_receiver.cpp` – robot-style command consumer.
 
-**Reliable Mode (default)**:
-```cpp
-ESP32RemoteControl* controller = createProtocolInstance(ESP32_RC_PROTOCOL, false);  // fast_mode = false
-```
-- Queued message transmission (up to 10 messages)
-- Guaranteed delivery attempts
-- Higher latency (~10-50ms)
+Each sketch is single-source and can be uploaded directly with PlatformIO
+(`pio run -e <env> -t upload`).
 
-**Fast Mode**:
-```cpp
-ESP32RemoteControl* controller = createProtocolInstance(ESP32_RC_PROTOCOL, true);   // fast_mode = true
-```
-- Single message queue (overwrites previous)
-- Minimal latency (~1-5ms)
-- No delivery guarantees
+## PC Utilities
 
+- `examples/serial_espnow_bridge/keyboard_serial.py` – terminal client for the
+  serial bridge that tags outgoing and incoming packets.
+- `examples/serial_espnow_bridge/ui_serial.py` – PyQt5/PySide6 desktop UI with a
+  light theme, serial port picker, logging panes, and packet editor.
+- `examples/keyboard_remote_control/keyboard_controller.py` – keyboard-driven
+  command generator (ESP-NOW or nRF24) with serial bridge integration.
 
-## Dependencies
+Install prerequisites with `pip install pyserial` and, for the UI, `pip install pyqt5`
+or `pip install pyside6`.
 
-- **PlatformIO ESP32 Framework** (Arduino)
-- **esp32-common**: Custom utility library (https://github.com/gr82morozr/esp32-common.git)
-- **RF24**: nRF24L01+ library (version ^1.4.11) - only for NRF24 protocol
+## Troubleshooting Tips
+
+- Increase logging by setting `CURRENT_LOG_LEVEL` to `4` (DEBUG) in
+  `esp32_rc_user_config.h`.
+- Verify heartbeats by watching the metrics banner; a missing heartbeat forces
+  reconnection.
+- For nRF24 links, double-check CE/CSN wiring and confirm both nodes share the
+  same RF channel.
+- WiFi mode is experimental; keep both devices near each other on channel 6 and
+  allow up to 15 seconds for the full raw-frame discovery and UDP handshake.
 
 ## Contributing
 
-This library follows a modular architecture. To add new protocols:
+Protocol implementations inherit from `ESP32RemoteControl` and implement:
 
-1. Inherit from `ESP32RemoteControl` base class
-2. Implement pure virtual methods: `getProtocol()`, `lowLevelSend()`, `parseRawData()`  
-3. Override `connect()` for protocol-specific initialization
-4. Use `onDataReceived()` for incoming messages and `onPeerDiscovered()` for peer detection
+- `getProtocol()`
+- `lowLevelSend(const RCMessage_t&)`
+- `parseRawData(const uint8_t*, size_t)`
+
+Optional overrides handle discovery broadcasts, address formats, and custom
+connection logic. Pull requests with additional protocols, tooling, or examples
+are welcome.
 
 ## License
 
-This project is open source. See license file for details.
-
----
-
-**Ready Protocols**: ESP-NOW ✅ | NRF24L01+ ✅ | WiFi Raw 🔄 | Bluetooth LE ❌
+The project is released under the MIT License as declared in `library.json`.
