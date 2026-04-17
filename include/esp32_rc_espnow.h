@@ -33,7 +33,7 @@ class ESP32_RC_ESPNOW : public ESP32RemoteControl {
 
  private:
   // ESPNOW-specific state , to track sent message status
-  static const int _ring_cap = 8;  // Must be power of 2
+  static const int _ring_cap = 32;
   struct BoolRing {
     volatile uint16_t head = 0, tail = 0;
     bool buf[_ring_cap];
@@ -51,6 +51,15 @@ class ESP32_RC_ESPNOW : public ESP32RemoteControl {
       __sync_synchronize();             // acquire
       out = buf[t];
       tail = uint16_t((t + 1) % _ring_cap);
+      return true;
+    }
+    inline bool rollbackLast(bool expected) {
+      uint16_t h = head;
+      if (h == tail) return false;      // empty
+      uint16_t prev = uint16_t((h + _ring_cap - 1) % _ring_cap);
+      if (buf[prev] != expected) return false;
+      head = prev;
+      __sync_synchronize();
       return true;
     }
   };

@@ -1,28 +1,28 @@
-# ESP32 Serial-to-ESPNOW Transparent Bridge
+# ESP32 Serial-to-ESPNOW CSV Bridge
 
-A simple transparent bridge that passes raw serial data through ESPNOW protocol without any command parsing or protocol-specific logic.
+A simple bridge that maps newline-terminated CSV serial packets to the `RCPayload_t` ESPNOW payload format.
 
 ## 📋 Overview
 
 This bridge provides:
-- **Transparent data passthrough** between Serial and ESPNOW
-- **Raw byte mapping** to ESPNOW packet format (RCPayload_t)
+- **CSV text input** from Serial to ESPNOW
+- **Structured text output** from ESPNOW to Serial
 - **Bidirectional communication** (Serial ↔ ESPNOW)
-- **No protocol logic** - just passes data through
+- **Strict packet validation** before sending
 - **Simple operation** - no JSON commands or complex interfaces
 
 ## 📁 Files in this Directory
 
 | File | Description |
 |------|-------------|
-| `serial_espnow_bridge.cpp` | ESP32 transparent bridge firmware (Arduino sketch) |
+| `serial_espnow_bridge.cpp` | ESP32 CSV bridge firmware (Arduino sketch) |
 | `keyboard_serial.py` | Python keyboard input client for testing the bridge |
 | `README.md` | This file - usage guide |
 
 ## 🏗️ System Architecture
 
 ```
-PC/Device (Raw Bytes) ←→ ESP32 (Transparent Bridge) ←→ [ESP-NOW] ←→ Remote Device(s)
+PC/Device (CSV Text) <-> ESP32 (CSV Bridge) <-> [ESP-NOW] <-> Remote Device(s)
 ```
 
 ## 🚀 Quick Start
@@ -50,14 +50,16 @@ ESPNOW controller initialized
 ### 3. Usage
 
 #### Send Data (Serial → ESPNOW)
-Send raw bytes via serial terminal or application:
-- Up to 25 bytes per packet (RCPayload_t size)
-- Bytes are mapped directly to ESPNOW payload structure
-- Debug output shows hex representation of sent data
+Send one newline-terminated CSV packet per message:
+- Format: `id1,id2,id3,id4,value1,value2,value3,value4,value5,flags`
+- Exactly 10 fields are required
+- ID and flags fields must be integer values from 0 to 255
+- Float fields must be valid numeric values
+- Invalid input returns `RC_ERROR:bad_csv`
 
 #### Receive Data (ESPNOW → Serial)  
-- Incoming ESPNOW packets are forwarded as raw bytes to serial
-- Debug output shows hex representation of received data
+- Incoming ESPNOW packets are printed as `RC_DATA:id1,id2,id3,id4,value1,value2,value3,value4,value5,flags`
+- Successfully submitted serial packets are echoed as `RC_SENT:id1,id2,id3,id4,value1,value2,value3,value4,value5,flags`
 
 ## 📡 Data Format
 
@@ -274,4 +276,4 @@ Quickly prototype ESPNOW communication without writing complex firmware.
 
 ---
 
-This transparent bridge provides the simplest possible interface between serial communication and ESPNOW, making it ideal for applications that need raw data passthrough without protocol complexity.
+This CSV bridge provides a simple structured text interface between serial communication and ESPNOW.

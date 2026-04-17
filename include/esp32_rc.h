@@ -46,6 +46,7 @@ class ESP32RemoteControl {
   // ========== STABLE USER API (DO NOT OVERRIDE) ==========
   
   // Callback management - stable implementation
+  void setOnReceiveMsgHandler(recv_cb_t cb);
   void setOnRecieveMsgHandler(recv_cb_t cb);
   void setOnDiscoveryHandler(discovery_cb_t cb);
   

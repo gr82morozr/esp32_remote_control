@@ -1,0 +1,100 @@
+WiFi Build Details
+==================
+
+AP Mode Flow
+------------
+
+1. On startup, scan for a WiFi network with the configured name.
+
+   - If the network is not found within the timeout, start hosting the AP.
+   - If the network is found, connect to it as a station.
+
+2. After connecting, send a UDP broadcast containing this node's MAC address
+   and IP address.
+
+   At the same time, listen for UDP broadcasts from other nodes so this node can
+   learn the partner node's MAC address and IP address.
+
+   Once both nodes have received each other's MAC and IP information, the
+   handshake is complete.
+
+3. After the handshake, open a TCP connection to the partner node.
+
+   Use the TCP connection for real data and heartbeat messages.
+
+4. Treat received real data as an implicit successful heartbeat.
+
+   Any valid data packet from the partner should reset the heartbeat timer.
+
+5. If the heartbeat times out:
+
+   - Set the connection state to disconnected.
+   - Stop responding to heartbeat messages for the stale connection.
+   - Restart the handshake process.
+
+6. If disconnection is detected by any other reliable method, also restart the
+   handshake process.
+
+
+Important Build Instructions
+----------------------------
+
+Build this code step by step. Do not move to the next part until the current
+part is confirmed stable, reliable, and fast.
+
+Step 1:
+
+Do not touch the existing ESP-NOW, NRF24, or base class code. Those paths are
+already proven to work.
+
+Step 2:
+
+First, implement only peer discovery and AP role negotiation.
+
+During this phase:
+
+- Disable unrelated output such as metrics printing, so the serial logs stay
+  clean.
+- Do not hard-code IP addresses in the configuration.
+- Focus only on proving that both nodes can discover each other and agree which
+  node becomes the AP.
+
+
+Discovery Idea: Raw 802.11 Frame Rendezvous
+-------------------------------------------
+
+This is the lowest-level WiFi discovery approach. The ESP32 WiFi radio sends
+and receives custom 802.11 frames directly, without first creating an AP and
+without running a normal WiFi scan.
+
+Normal WiFi discovery:
+
+- AP-to-station discovery depends on beacons and probe requests.
+- A scan requires the station to hop across channels and listen for beacons.
+- This is slow because the device may dwell on each channel for 100-300 ms.
+
+Alternative approach:
+
+1. Both nodes use the same fixed rendezvous channel, for example channel 6.
+
+2. Each node periodically injects a custom 802.11 management frame.
+
+   This could be a vendor-specific action frame or a probe request containing a
+   unique marker, such as a custom OUI or payload signature.
+
+3. Both nodes run in sniff/promiscuous receive mode and listen for those custom
+   frames.
+
+4. As soon as a node receives the peer's custom frame, discovery is complete.
+
+This avoids normal AP creation and scanning during the discovery phase.
+
+
+Step 3:
+
+After the first handshake succeeds, each node must continue listening for a new
+handshake trigger.
+
+This is needed because the partner node may reboot. If a reboot or fresh
+handshake request is detected, restart the handshake process and rebuild the
+connection.

@@ -12,25 +12,27 @@ runtime, so there is no master/slave split to maintain.
 - Automatic discovery, handshake, and connection monitoring with 100 ms
   heartbeats and 300 ms timeouts
 - Switch transports at compile time through one macro while keeping the same API
-- Fast mode (single-slot queue) or reliable mode (10-slot queue with retries)
+- Fast mode, using a single-slot queue, or reliable mode, using 10-slot queues
+  with retries
 - Lightweight performance metrics with sliding-window TPS calculation
-- Python utilities for rapid testing (keyboard controller, serial bridge UI)
+- Python utilities for rapid testing, including keyboard control and serial UI
+- ESP32-only target; ESP8266 is not supported by this library
 
 ## Supported Protocols
 
-| Protocol        | Status       | Notes                                                                           |
-|-----------------|--------------|---------------------------------------------------------------------------------|
-| ESP-NOW         | Stable       | Direct ESP32-to-ESP32 link with automatic peer addition and ack/retry handling |
-| nRF24L01+       | Stable       | 5-byte address handshake, pipe switching, compile-time pin/channel selection    |
-| WiFi Raw 802.11 | Experimental | Raw frame discovery plus UDP data channel, AP/STA negotiation at runtime        |
-| Bluetooth LE    | Planned      | Interface reserved for a future implementation                                  |
+| Protocol | Status | Notes |
+|----------|--------|-------|
+| ESP-NOW | Stable | Direct ESP32-to-ESP32 link with automatic peer addition and ack/retry handling |
+| nRF24L01+ | Stable | 5-byte address handshake, pipe switching, compile-time pin/channel selection |
+| WiFi Raw 802.11 | Experimental | Raw frame discovery and AP/STA negotiation work in progress |
+| Bluetooth LE | Planned | Interface reserved for a future implementation |
 
-## Architecture at a Glance
+## Architecture
 
 - **Discovery layer**: broadcast ESP-NOW beacons, NRF24 handshake frames, or raw
   802.11 vendor frames to locate peers.
 - **Connection layer**: role negotiation, heartbeat timers, and reconnection on
-  silence; exposes state via `getConnectionState()`.
+  silence; exposes state through `getConnectionState()`.
 - **Transport layer**: fixed `RCMessage_t` container with helper accessors and
   protocol-specific `lowLevelSend()` implementations.
 
@@ -53,8 +55,8 @@ struct RCMessage_t {
 ### Requirements
 
 - PlatformIO 6.x or Arduino IDE with the ESP32 core
-- `esp32-common` helper library (installed automatically when listed in
-  `lib_deps`)
+- `esp32-common` helper library, installed automatically when listed in
+  `lib_deps`
 - `nrf24/RF24` when compiling the nRF24L01+ protocol
 
 Add the library to your `platformio.ini`:
@@ -69,9 +71,9 @@ lib_deps =
   nrf24/RF24 @ ^1.4.11    ; required only for NRF24 builds
 ```
 
-### Select a protocol
+### Select A Protocol
 
-Choose the protocol **before** including `esp32_rc_factory.h`. Only the selected
+Choose the protocol before including `esp32_rc_factory.h`. Only the selected
 transport is compiled, keeping the firmware focused.
 
 ```cpp
@@ -79,7 +81,7 @@ transport is compiled, keeping the firmware focused.
 #include "esp32_rc_factory.h"
 ```
 
-### Minimal sketch
+### Minimal Sketch
 
 ```cpp
 #include <Arduino.h>
@@ -101,7 +103,7 @@ void setup() {
     Serial.println("Protocol not enabled in esp32_rc_user_config.h");
     return;
   }
-  controller->setOnRecieveMsgHandler(onMessage);
+  controller->setOnReceiveMsgHandler(onMessage);
   controller->connect();
 }
 
@@ -126,13 +128,13 @@ All user-tunable settings live in `include/esp32_rc_user_config.h`:
 - Select the active protocol with `ESP32_RC_PROTOCOL`
 - Configure nRF24L01+ pins, SPI bus, RF channel, data rate, and power level
 - Adjust WiFi discovery timeouts and UDP port
-- Set global logging level (`CURRENT_LOG_LEVEL`)
+- Set global logging level with `CURRENT_LOG_LEVEL`
 - Override queue depths, retry counts, or heartbeat timings if needed
 
-### Custom payloads
+### Custom Payloads
 
 The default payload is 25 bytes. If you need a different structure, redefine it
-*before* including any library headers:
+before including any library headers:
 
 ```cpp
 #ifndef RC_PAYLOAD_T_DEFINED
@@ -147,64 +149,97 @@ struct RCPayload_t {
 #endif
 ```
 
-Make sure the new size fits within the limits of your chosen transport
-(ESP-NOW supports up to 250 bytes, NRF24 up to 32 bytes).
+Make sure the new size fits within the limits of your chosen transport.
+ESP-NOW supports larger packets, but NRF24 payloads are limited to 32 bytes.
 
-### Fast versus reliable mode
+### Fast Versus Reliable Mode
 
-- `fast_mode = false` (default): background queue of 10 messages with retries.
-- `fast_mode = true`: single-slot queue for minimum latency; new data replaces
-  pending packets.
+- `fast_mode = false`: reliable mode with a background queue of 10 messages and
+  retries.
+- `fast_mode = true`: low-latency mode with a single-slot queue; new data
+  replaces pending packets.
 
-## Metrics and Diagnostics
+## Metrics And Diagnostics
 
 - `ESP32RemoteControl::enableGlobalMetrics(bool)` toggles statistical tracking.
 - `controller->enableMetricsDisplay(true, 1000)` prints a summary every second.
 - Heartbeat packets are excluded from send metrics automatically.
+- `setOnReceiveMsgHandler()` registers a receive callback. The older
+  `setOnRecieveMsgHandler()` spelling is kept as a compatibility wrapper.
 - `setOnDiscoveryHandler()` delivers discovery events for dashboards or logs.
 
 Typical metrics output:
 
-```
+```text
 Time(s) | Protocol | Conn | Send(OK/Fail/Rate/TPS) | Recv(OK/Fail/Rate/TPS) | Total(Sent/Recv)
      45 |  ESPNOW  | CONN | 42/ 3/ 93%/12.3        | 38/ 0/100%/11.2        |   45/  38
 ```
 
 ## Examples
 
-- `examples/basic_espnow.cpp` – introductory ESP-NOW sender/receiver pair.
-- `examples/basic_nrf24.cpp` – nRF24L01+ handshake, queueing, and data flow.
-- `examples/basic_wifi.cpp` – raw 802.11 discovery with UDP transport.
-- `examples/callback/basic_espnow_callback.cpp` – receive callbacks instead of polling.
-- `examples/remote_blinkled.cpp` – payload-driven LED control sketch.
-- `examples/serial_espnow_bridge/serial_espnow_bridge.cpp` – USB-to-ESP-NOW bridge firmware.
-- `examples/keyboard_remote_control/keyboard_receiver.cpp` – robot-style command consumer.
+- `examples/basic/basic_espnow.cpp` - introductory ESP-NOW sender/receiver pair
+- `examples/basic/basic_nrf24.cpp` - nRF24L01+ handshake, queueing, and data flow
+- `examples/basic/basic_wifi.cpp` - raw 802.11 discovery experiment
+- `examples/callback/basic_espnow_callback.cpp` - receive callbacks instead of polling
+- `examples/basic/remote_blinkled.cpp` - payload-driven LED control sketch
+- `examples/serial_espnow_bridge/serial_espnow_bridge.cpp` - USB-to-ESP-NOW CSV bridge firmware
+- `examples/keyboard_remote_control/keyboard_receiver.cpp` - robot-style command consumer
 
-Each sketch is single-source and can be uploaded directly with PlatformIO
-(`pio run -e <env> -t upload`).
+Each sketch is single-source and can be uploaded directly with PlatformIO:
+
+```bash
+pio run -e <env> -t upload
+```
+
+## Serial CSV Bridge
+
+The serial bridge accepts one newline-terminated CSV packet per message:
+
+```text
+id1,id2,id3,id4,value1,value2,value3,value4,value5,flags
+```
+
+Exactly 10 fields are required. ID and flag fields must be integer values from
+0 to 255, and value fields must be valid floats. Invalid input returns:
+
+```text
+RC_ERROR:bad_csv
+```
+
+Incoming ESP-NOW packets are printed as:
+
+```text
+RC_DATA:id1,id2,id3,id4,value1,value2,value3,value4,value5,flags
+```
+
+Successfully submitted serial packets are echoed as:
+
+```text
+RC_SENT:id1,id2,id3,id4,value1,value2,value3,value4,value5,flags
+```
 
 ## PC Utilities
 
-- `examples/serial_espnow_bridge/keyboard_serial.py` – terminal client for the
-  serial bridge that tags outgoing and incoming packets.
-- `examples/serial_espnow_bridge/ui_serial.py` – PyQt5/PySide6 desktop UI with a
-  light theme, serial port picker, logging panes, and packet editor.
-- `examples/keyboard_remote_control/keyboard_controller.py` – keyboard-driven
-  command generator (ESP-NOW or nRF24) with serial bridge integration.
+- `examples/serial_espnow_bridge/keyboard_serial.py` - terminal client for the
+  CSV serial bridge that tags outgoing and incoming packets
+- `examples/serial_espnow_bridge/ui_serial.py` - PyQt5/PySide6 desktop UI with a
+  light theme, serial port picker, logging panes, and packet editor
+- `examples/keyboard_remote_control/keyboard_controller.py` - keyboard-driven
+  command generator with serial bridge integration
 
-Install prerequisites with `pip install pyserial` and, for the UI, `pip install pyqt5`
-or `pip install pyside6`.
+Install prerequisites with `pip install pyserial`. For the UI, install either
+`pyqt5` or `pyside6`.
 
-## Troubleshooting Tips
+## Troubleshooting
 
-- Increase logging by setting `CURRENT_LOG_LEVEL` to `4` (DEBUG) in
+- Increase logging by setting `CURRENT_LOG_LEVEL` to `4` in
   `esp32_rc_user_config.h`.
-- Verify heartbeats by watching the metrics banner; a missing heartbeat forces
+- Verify heartbeats by watching the metrics banner. A missing heartbeat forces
   reconnection.
 - For nRF24 links, double-check CE/CSN wiring and confirm both nodes share the
   same RF channel.
-- WiFi mode is experimental; keep both devices near each other on channel 6 and
-  allow up to 15 seconds for the full raw-frame discovery and UDP handshake.
+- WiFi mode is experimental. Keep both devices near each other on the rendezvous
+  channel and expect the implementation to change.
 
 ## Contributing
 

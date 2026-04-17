@@ -107,6 +107,10 @@ ESP32RemoteControl::ESP32RemoteControl(bool fast_mode) : fast_mode_(fast_mode) {
  * 4. Background task cleanup handled by FreeRTOS
  */
 ESP32RemoteControl::~ESP32RemoteControl() {
+  if (sendFromQueueTaskHandle_) {
+    vTaskDelete(sendFromQueueTaskHandle_);
+    sendFromQueueTaskHandle_ = nullptr;
+  }
   if (timer_heartbeat_) {
     xTimerStop(timer_heartbeat_, 0);
     xTimerDelete(timer_heartbeat_, 0);
@@ -172,13 +176,17 @@ void ESP32RemoteControl::connect() {
  *   void myMessageHandler(const RCMessage_t& msg) {
  *     Serial.println("Received message!");
  *   }
- *   controller->setOnRecieveMsgHandler(myMessageHandler);
+ *   controller->setOnReceiveMsgHandler(myMessageHandler);
  * 
  * Note: Callback executes in protocol context - keep processing minimal
  */
-void ESP32RemoteControl::setOnRecieveMsgHandler(recv_cb_t cb) {
+void ESP32RemoteControl::setOnReceiveMsgHandler(recv_cb_t cb) {
   // Set the custom callback for received messages - FINAL implementation
   recv_callback_ = cb;
+}
+
+void ESP32RemoteControl::setOnRecieveMsgHandler(recv_cb_t cb) {
+  setOnReceiveMsgHandler(cb);
 }
 
 /**
@@ -258,7 +266,7 @@ void ESP32RemoteControl::onDataReceived(const RCMessage_t& msg) {
     } 
     // Reset heartbeat timer for any received message
     last_heartbeat_rx_ms_ = millis();
-    xSemaphoreGive(data_lock_);
+    xSemaphoreGiveRecursive(data_lock_);
   }
   
   switch (msg.type) {

@@ -110,6 +110,7 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t &msg) {
   esp_err_t sendResult = ESP_FAIL;
   uint8_t* target_addr;
   static uint8_t bcast[RC_ADDR_SIZE] = RC_BROADCAST_MAC;
+  const bool is_heartbeat = (msg.type == RCMSG_TYPE_HEARTBEAT);
   
   // Determine target address
   if (conn_state_ == RCConnectionState_t::CONNECTED) {
@@ -118,8 +119,19 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t &msg) {
     target_addr = bcast;
   }
   
-  // Retry logic for failed sends
+  // Retry logic for failed sends. Reserve callback metadata before esp_now_send()
+  // so a fast send-status callback cannot arrive before the metadata exists.
   for (int retry = 0; retry <= MAX_SEND_RETRIES; retry++) {
+    if (!_ring.push(is_heartbeat)) {
+      if (is_heartbeat) {
+        LOG_ERROR("ESP-NOW send status ring overflow for heartbeat");
+      } else {
+        LOG_ERROR("ESP-NOW send status ring overflow for data message");
+        send_metrics_.addFailure();
+      }
+      return;
+    }
+
     sendResult = esp_now_send(target_addr, reinterpret_cast<const uint8_t *>(&msg), sizeof(RCMessage_t));
     
     if (sendResult == ESP_OK) {
@@ -127,6 +139,10 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t &msg) {
         LOG_DEBUG("ESP-NOW send succeeded on retry %d", retry);
       }
       break;  // Success, exit retry loop
+    }
+
+    if (!_ring.rollbackLast(is_heartbeat)) {
+      LOG_ERROR("ESP-NOW failed to roll back send metadata after immediate send error");
     }
     
     // Log error and retry if not last attempt
@@ -143,8 +159,6 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t &msg) {
       LOG_ERROR("ESP-NOW send failed after %d retries: %s", MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
       send_metrics_.addFailure();  // Track failed transmission
     } else {
-      //  set flag - this is not heartbeat message
-      if (! _ring.push(false)) return ;  
       LOG_DEBUG("ESP-NOW sent message type %d successfully", msg.type);
     }
     // Note: Success metrics tracked in delivery callback (onDataSentInternal)
@@ -152,8 +166,6 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t &msg) {
     // Still log heartbeat errors but don't include in metrics
     LOG_ERROR("ESP-NOW heartbeat send failed after %d retries: %s", MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
   } else {
-    // set flag - this is heartbeat message
-    if (! _ring.push(true)) return ;  
     LOG_DEBUG("ESP-NOW heartbeat sent successfully");
   }
 }
@@ -273,6 +285,22 @@ void ESP32_RC_ESPNOW::onDataRecvStatic(const uint8_t *mac, const uint8_t *data, 
   // Called when data is received
   LOG_DEBUG("ESPNOW: Data received");
   if (instance_) {
+    if (!mac || !data) {
+      LOG_ERROR("ESP-NOW receive callback received null data");
+      return;
+    }
+
+    if (len != sizeof(RCMessage_t)) {
+      LOG_ERROR("Invalid ESP-NOW message size: expected %d, got %d", sizeof(RCMessage_t), len);
+      return;
+    }
+
+    uint8_t msg_type = data[0];
+    if (msg_type != RCMSG_TYPE_DATA && msg_type != RCMSG_TYPE_HEARTBEAT) {
+      LOG_ERROR("Invalid ESP-NOW message type: %d", msg_type);
+      return;
+    }
+
     RCMessage_t msg = instance_->parseRawData(data, len);
 
     // Overwrite from_addr with the actual sender MAC from ESPNOW
@@ -364,8 +392,11 @@ RCMessage_t ESP32_RC_ESPNOW::parseRawData(const uint8_t *data, size_t len) {
  */
 void ESP32_RC_ESPNOW::onDataSentInternal(const uint8_t *mac, esp_now_send_status_t status) {
   // If boradcast, no metrics update 
-  bool is_heartbeat; 
-  _ring.pop(is_heartbeat);   
+  bool is_heartbeat = true;
+  if (!_ring.pop(is_heartbeat)) {
+    LOG_ERROR("ESP-NOW send status callback without queued send metadata");
+    return;
+  }
   //if (memcmp(mac, (const uint8_t[6])RC_BROADCAST_MAC, 6) != 0 ) {
   if (!is_heartbeat) {
     // Track actual delivery success/failure in metrics
@@ -475,4 +506,3 @@ void ESP32_RC_ESPNOW::createBroadcastAddress(RCAddress_t& broadcast_addr) const 
   uint8_t broadcast_mac[RC_ADDR_SIZE] = RC_BROADCAST_MAC;
   memcpy(broadcast_addr, broadcast_mac, RC_ADDR_SIZE);
 }
-

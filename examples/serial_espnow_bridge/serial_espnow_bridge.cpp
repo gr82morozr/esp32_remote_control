@@ -2,16 +2,74 @@
 #include "esp32_rc_factory.h"
 
 /*
-ESP32 Serial-to-ESPNOW Transparent Bridge
+ESP32 Serial-to-ESPNOW CSV Bridge
 
-Simple transparent bridge that reads serial input and forwards it via ESPNOW.
-- Reads raw serial data 
+Simple bridge that reads CSV serial input and forwards it via ESPNOW.
+- Reads newline-terminated CSV packets
 - Maps to ESPNOW packet format (RCPayload_t)
-- No protocol-specific logic
-- Bidirectional transparent passthrough
+- Bidirectional structured text passthrough
 */
 
 ESP32RemoteControl* espnow_controller = nullptr;
+
+bool parseUInt8Field(String field, uint8_t& value) {
+  field.trim();
+  if (field.length() == 0) return false;
+
+  char* end = nullptr;
+  long parsed = strtol(field.c_str(), &end, 10);
+  if (end == field.c_str() || *end != '\0') return false;
+  if (parsed < 0 || parsed > 255) return false;
+
+  value = static_cast<uint8_t>(parsed);
+  return true;
+}
+
+bool parseFloatField(String field, float& value) {
+  field.trim();
+  if (field.length() == 0) return false;
+
+  char* end = nullptr;
+  float parsed = strtof(field.c_str(), &end);
+  if (end == field.c_str() || *end != '\0') return false;
+
+  value = parsed;
+  return true;
+}
+
+bool parsePayloadCsv(const String& line, RCPayload_t& payload) {
+  int field_count = 0;
+  int start_index = 0;
+
+  for (int i = 0; i <= line.length(); i++) {
+    if (i == line.length() || line[i] == ',') {
+      if (field_count >= 10) return false;
+
+      String field = line.substring(start_index, i);
+      bool ok = false;
+
+      switch (field_count) {
+        case 0: ok = parseUInt8Field(field, payload.id1); break;
+        case 1: ok = parseUInt8Field(field, payload.id2); break;
+        case 2: ok = parseUInt8Field(field, payload.id3); break;
+        case 3: ok = parseUInt8Field(field, payload.id4); break;
+        case 4: ok = parseFloatField(field, payload.value1); break;
+        case 5: ok = parseFloatField(field, payload.value2); break;
+        case 6: ok = parseFloatField(field, payload.value3); break;
+        case 7: ok = parseFloatField(field, payload.value4); break;
+        case 8: ok = parseFloatField(field, payload.value5); break;
+        case 9: ok = parseUInt8Field(field, payload.flags); break;
+      }
+
+      if (!ok) return false;
+
+      field_count++;
+      start_index = i + 1;
+    }
+  }
+
+  return field_count == 10;
+}
 
 // Callback function for handling received ESPNOW data
 void onDataReceived(const RCMessage_t& msg) {
@@ -36,7 +94,7 @@ void setup() {
   
   if (espnow_controller) {
     espnow_controller->enableMetricsDisplay(false);
-    espnow_controller->setOnRecieveMsgHandler(onDataReceived);  // Register callback
+    espnow_controller->setOnReceiveMsgHandler(onDataReceived);  // Register callback
     espnow_controller->connect();
     Serial.println("ESPNOW controller initialized with callback");
   } else {
@@ -60,40 +118,17 @@ void loop() {
       // Parse CSV format: id1,id2,id3,id4,value1,value2,value3,value4,value5,flags
       RCPayload_t payload = {0};
       
-      // Parse CSV values
-      int field_count = 0;
-      int start_index = 0;
-      
-      for (int i = 0; i <= line.length(); i++) {
-        if (i == line.length() || line[i] == ',') {
-          String field = line.substring(start_index, i);
-          
-          switch (field_count) {
-            case 0: payload.id1 = field.toInt(); break;
-            case 1: payload.id2 = field.toInt(); break;
-            case 2: payload.id3 = field.toInt(); break;
-            case 3: payload.id4 = field.toInt(); break;
-            case 4: payload.value1 = field.toFloat(); break;
-            case 5: payload.value2 = field.toFloat(); break;
-            case 6: payload.value3 = field.toFloat(); break;
-            case 7: payload.value4 = field.toFloat(); break;
-            case 8: payload.value5 = field.toFloat(); break;
-            case 9: payload.flags = field.toInt(); break;
-          }
-          field_count++;
-          start_index = i + 1;
-        }
+      if (!parsePayloadCsv(line, payload)) {
+        Serial.println("RC_ERROR:bad_csv");
+        return;
       }
       
-      // Send via ESPNOW if we got at least the basic fields
-      if (field_count >= 6) {
-        if (espnow_controller->sendData(payload)) {
-          // Output structured text data with unique flag for sent data
-          Serial.printf("RC_SENT:%d,%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%d\n",
-            payload.id1, payload.id2, payload.id3, payload.id4,
-            payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
-            payload.flags);
-        }
+      if (espnow_controller->sendData(payload)) {
+        // Output structured text data with unique flag for sent data
+        Serial.printf("RC_SENT:%d,%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%d\n",
+          payload.id1, payload.id2, payload.id3, payload.id4,
+          payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
+          payload.flags);
       }
     }
   }

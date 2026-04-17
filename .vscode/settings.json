@@ -1,6 +1,19 @@
 {
   "python.defaultInterpreterPath": ".venv/Scripts/python.exe",
   "python.languageServer": "Pylance",
-  "python.analysis.typeCheckingMode": "basic"
+  "python.analysis.typeCheckingMode": "basic",
+  "workbench.colorCustomizations": {
+    "activityBar.background": "#541A18",
+    "titleBar.activeBackground": "#762421",
+    "titleBar.activeForeground": "#FEFBFB",
+    "titleBar.inactiveBackground": "#541A18",
+    "titleBar.inactiveForeground": "#FEFBFB",
+    "statusBar.background": "#541A18",
+    "statusBar.foreground": "#FEFBFB",
+    "statusBar.debuggingBackground": "#541A18",
+    "statusBar.debuggingForeground": "#FEFBFB",
+    "statusBar.noFolderBackground": "#541A18",
+    "statusBar.noFolderForeground": "#FEFBFB"
+  }
 }
 

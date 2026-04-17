@@ -7,7 +7,7 @@ This example demonstrates how to use the ESP32RemoteControl library with callbac
 instead of polling for received data. The callback approach is more efficient and responsive.
 
 Key differences from basic_espnow.cpp:
-- Uses setOnRecieveMsgHandler() to register a callback function
+- Uses setOnReceiveMsgHandler() to register a callback function
 - Data is processed automatically when received (no polling needed)
 - More responsive to incoming data
 - Cleaner separation of send/receive logic
@@ -137,7 +137,7 @@ void setup() {
     controller->enableMetricsDisplay(true, 2000);
     
     // REGISTER CALLBACKS - This is the key difference from the basic example!
-    controller->setOnRecieveMsgHandler(onMessageReceived);
+    controller->setOnReceiveMsgHandler(onMessageReceived);
     controller->setOnDiscoveryHandler(onDeviceDiscovered);
     
     LOG("Callbacks registered:");
