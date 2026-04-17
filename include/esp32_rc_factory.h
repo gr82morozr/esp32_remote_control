@@ -75,6 +75,15 @@ inline ESP32RemoteControl* createProtocolInstance(RCProtocol_t protocol, bool fa
 }
 
 /**
+ * @brief Destroy a protocol instance created by createProtocolInstance().
+ * @param controller Reference to the controller pointer; set to nullptr after delete
+ */
+inline void destroyProtocolInstance(ESP32RemoteControl*& controller) {
+    delete controller;
+    controller = nullptr;
+}
+
+/**
  * @brief Check if a protocol is available at compile time
  * @param protocol The protocol to check
  * @return true if protocol is enabled, false otherwise

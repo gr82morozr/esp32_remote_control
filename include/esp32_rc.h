@@ -145,6 +145,7 @@ class ESP32RemoteControl {
   uint32_t metrics_interval_ms_ = 1000;
   uint32_t last_metrics_print_ms_ = 0;
   static int metrics_line_count_;  // Static for header management across instances
+  void cleanupResources();
 
  private:
   // Internal method to handle received messages
@@ -156,6 +157,7 @@ class ESP32RemoteControl {
 
   // Task handle for the sendFromQueue loop
   TaskHandle_t sendFromQueueTaskHandle_ = nullptr;
+  volatile bool send_task_running_ = false;
   static void heartbeatTimerCallback(TimerHandle_t xTimer);
   static void sendFromQueueLoop(void* arg);
 };

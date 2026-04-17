@@ -23,6 +23,10 @@ ESP32_RC_ESPNOW::ESP32_RC_ESPNOW(bool fast_mode)
     instance_ = this;
     if (!init()) {
         LOG_ERROR("ESPNOW init failed!");
+        if (instance_ == this) {
+            instance_ = nullptr;
+        }
+        cleanupResources();
         SYS_HALT;   
     }
 }
@@ -34,7 +38,12 @@ ESP32_RC_ESPNOW::ESP32_RC_ESPNOW(bool fast_mode)
  * Called automatically when the controller object is destroyed.
  */
 ESP32_RC_ESPNOW::~ESP32_RC_ESPNOW() {
+    esp_now_unregister_recv_cb();
+    esp_now_unregister_send_cb();
     esp_now_deinit();
+    if (instance_ == this) {
+        instance_ = nullptr;
+    }
 }
 
 /**

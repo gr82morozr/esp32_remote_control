@@ -56,6 +56,7 @@ ESP32RemoteControl::ESP32RemoteControl(bool fast_mode) : fast_mode_(fast_mode) {
   // Check if queues were created successfully
   if (!queue_send_ || !queue_recv_) {
     LOG_ERROR("Failed to create message queues!");
+    cleanupResources();
     SYS_HALT;
   }
 
@@ -69,12 +70,18 @@ ESP32RemoteControl::ESP32RemoteControl(bool fast_mode) : fast_mode_(fast_mode) {
         &ESP32RemoteControl::heartbeatTimerCallback  // static function
     );
   }
+  if (!timer_heartbeat_) {
+    LOG_ERROR("Failed to create heartbeat timer!");
+    cleanupResources();
+    SYS_HALT;
+  }
   LOG("Heartbeat Timer created.");
     
 
   // start the sendFromQueueTask
   
-  xTaskCreatePinnedToCore(
+  send_task_running_ = true;
+  BaseType_t taskCreated = xTaskCreatePinnedToCore(
       ESP32RemoteControl::sendFromQueueLoop,  // Static task wrapper
       "SendTask", 4096,
       this,  // Pass the instance
@@ -85,8 +92,10 @@ ESP32RemoteControl::ESP32RemoteControl(bool fast_mode) : fast_mode_(fast_mode) {
 
   LOG("SendFromQueueTask created.");
 
-  if (sendFromQueueTaskHandle_ == nullptr) {
+  if (taskCreated != pdPASS || sendFromQueueTaskHandle_ == nullptr) {
     LOG_ERROR("Failed to create SendFromQueueTask");
+    send_task_running_ = false;
+    cleanupResources();
     SYS_HALT;
   } else {
     xTaskNotifyGive(sendFromQueueTaskHandle_); // Notify the task to start immediately
@@ -107,9 +116,22 @@ ESP32RemoteControl::ESP32RemoteControl(bool fast_mode) : fast_mode_(fast_mode) {
  * 4. Background task cleanup handled by FreeRTOS
  */
 ESP32RemoteControl::~ESP32RemoteControl() {
+  cleanupResources();
+}
+
+void ESP32RemoteControl::cleanupResources() {
   if (sendFromQueueTaskHandle_) {
-    vTaskDelete(sendFromQueueTaskHandle_);
-    sendFromQueueTaskHandle_ = nullptr;
+    send_task_running_ = false;
+    xTaskNotifyGive(sendFromQueueTaskHandle_);
+
+    for (uint8_t i = 0; i < 20 && sendFromQueueTaskHandle_; i++) {
+      vTaskDelay(pdMS_TO_TICKS(1));
+    }
+
+    if (sendFromQueueTaskHandle_) {
+      vTaskDelete(sendFromQueueTaskHandle_);
+      sendFromQueueTaskHandle_ = nullptr;
+    }
   }
   if (timer_heartbeat_) {
     xTimerStop(timer_heartbeat_, 0);
@@ -707,20 +729,25 @@ bool ESP32RemoteControl::recvData(RCPayload_t& payload) {
 void ESP32RemoteControl::sendFromQueueLoop(void* arg) {
   auto* self = static_cast<ESP32RemoteControl*>(arg);  // Cast arg to class instance
 
-  while (true) {
+  while (self->send_task_running_) {
     // Block until notified at least once
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    if (!self->send_task_running_) break;
 
     do {
       RCMessage_t msg;
       while (xQueueReceive(self->queue_send_, &msg, 0) == pdTRUE) {
+        if (!self->send_task_running_) break;
         LOG_DEBUG("Sending message of type %d", msg.type);
         self->lowLevelSend(msg);
         // Note: Actual success/failure tracking done in protocol-specific lowLevelSend()
         // Update send metrics
        }
-    } while (ulTaskNotifyTake(pdTRUE, 0) > 0);
+    } while (self->send_task_running_ && ulTaskNotifyTake(pdTRUE, 0) > 0);
   }
+
+  self->sendFromQueueTaskHandle_ = nullptr;
+  vTaskDelete(nullptr);
 }
 
 /**

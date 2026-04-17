@@ -27,6 +27,13 @@ ESP32_RC_NRF24::ESP32_RC_NRF24(bool fast_mode)
     
     if (!init()) {
         LOG_ERROR("NRF24 initialization failed!");
+        radio_.powerDown();
+        delete spiBus_;
+        spiBus_ = nullptr;
+        if (instance_ == this) {
+            instance_ = nullptr;
+        }
+        cleanupResources();
         SYS_HALT;
     }
 
@@ -50,6 +57,13 @@ ESP32_RC_NRF24::ESP32_RC_NRF24(bool fast_mode)
     
     if (receiveTaskHandle_ == nullptr) {
         LOG_ERROR("Failed to create NRF24 receive task");
+        radio_.powerDown();
+        delete spiBus_;
+        spiBus_ = nullptr;
+        if (instance_ == this) {
+            instance_ = nullptr;
+        }
+        cleanupResources();
         SYS_HALT;
     }
     
@@ -70,6 +84,9 @@ ESP32_RC_NRF24::~ESP32_RC_NRF24() {
   if (spiBus_) {
     delete spiBus_;
     spiBus_ = nullptr;
+  }
+  if (instance_ == this) {
+    instance_ = nullptr;
   }
 }
 
