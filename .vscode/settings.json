@@ -1,5 +1,5 @@
 {
-  "python.defaultInterpreterPath": ".venv/Scripts/python.exe",
+  "python.defaultInterpreterPath": "C:\\Tools\\anaconda3\\envs\\py312\\python.exe",
   "python.languageServer": "Pylance",
   "python.analysis.typeCheckingMode": "basic",
   "workbench.colorCustomizations": {
@@ -14,6 +14,8 @@
     "statusBar.debuggingForeground": "#FEFBFB",
     "statusBar.noFolderBackground": "#541A18",
     "statusBar.noFolderForeground": "#FEFBFB"
-  }
+  },
+  "python-envs.defaultEnvManager": "ms-python.python:conda",
+  "python-envs.defaultPackageManager": "ms-python.python:conda"
 }
 

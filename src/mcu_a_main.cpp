@@ -105,9 +105,17 @@ bool parsePayloadCsv(char* line, RCPayload_t& payload) {
   return field_count == 10;
 }
 
-void printPayload(const char* prefix, const RCPayload_t& payload) {
+void printPayloadCsv(const char* prefix, const RCPayload_t& payload) {
   Serial.printf("%s:%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%u\n",
     prefix,
+    payload.id1, payload.id2, payload.id3, payload.id4,
+    payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
+    payload.flags);
+}
+
+void printReceivedPayload(const RCPayload_t& payload) {
+  Serial.printf(
+    "RC_DATA:id1=%u, id2=%u, id3=%u, id4=%u, value1=%.2f, value2=%.2f, value3=%.2f, value4=%.2f, value5=%.2f, flags=%u\n",
     payload.id1, payload.id2, payload.id3, payload.id4,
     payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
     payload.flags);
@@ -129,7 +137,7 @@ void handleSerialLine(char* line) {
   }
 
   if (espnow_controller->sendData(payload)) {
-    printPayload("RC_SENT", payload);
+    printPayloadCsv("RC_SENT", payload);
   } else {
     Serial.println("RC_ERROR:send_failed");
   }
@@ -170,7 +178,7 @@ void flushReceivedData() {
 
   RCPayload_t payload = {};
   while (rx_queue.pop(payload)) {
-    printPayload("RC_DATA", payload);
+    printReceivedPayload(payload);
   }
 }
 
