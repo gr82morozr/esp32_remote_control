@@ -14,6 +14,7 @@ printed later from loop(), keeping callback work short and non-blocking.
 
 static constexpr size_t SERIAL_LINE_MAX = 128;
 static constexpr uint8_t RX_QUEUE_DEPTH = 16;
+static constexpr uint8_t PACKET_TYPE_TELEMETRY = 2;
 
 ESP32RemoteControl* espnow_controller = nullptr;
 
@@ -110,6 +111,23 @@ void printPayload(const char* prefix, const RCPayload_t& payload) {
     prefix,
     payload.id1, payload.id2, payload.id3, payload.id4,
     payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
+  payload.flags);
+}
+
+void printReceivedPayload(const RCPayload_t& payload) {
+  if (payload.id1 == PACKET_TYPE_TELEMETRY) {
+    Serial.printf(
+      "packet_type=%u,sequence=%u,cmd_id1=%u,cmd_id2=%u,time=%.2f,temp=%.2f,voltage=%.2f,cmd_value1=%.2f,cmd_value2=%.2f,command_seen=%u\n",
+      payload.id1, payload.id2, payload.id3, payload.id4,
+      payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
+      payload.flags & 0x01);
+    return;
+  }
+
+  Serial.printf(
+    "id1=%u,id2=%u,id3=%u,id4=%u,value1=%.2f,value2=%.2f,value3=%.2f,value4=%.2f,value5=%.2f,flags=%u\n",
+    payload.id1, payload.id2, payload.id3, payload.id4,
+    payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
     payload.flags);
 }
 
@@ -170,7 +188,7 @@ void flushReceivedData() {
 
   RCPayload_t payload = {};
   while (rx_queue.pop(payload)) {
-    printPayload("RC_DATA", payload);
+    printReceivedPayload(payload);
   }
 }
 

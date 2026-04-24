@@ -19,6 +19,7 @@ back over ESP-NOW for verification from the PC serial UI/log.
 #endif
 
 static constexpr uint32_t TELEMETRY_INTERVAL_MS = 10;
+static constexpr uint8_t PACKET_TYPE_TELEMETRY = 2;
 
 ESP32RemoteControl* controller = nullptr;
 
@@ -45,11 +46,17 @@ void populateTelemetry(RCPayload_t& payload) {
 
   const float time_sec = millis() / 1000.0f;
 
-  // Packet convention:
-  // id1 = 2 means telemetry.
-  // id2 = telemetry packet counter.
-  // id3/id4 echo the latest command IDs for correlation on the PC side.
-  payload.id1 = 2;
+  // Bridge-side mapping:
+  // id1     = packet type (telemetry)
+  // id2     = telemetry sequence counter
+  // id3/id4 = echoed command IDs for correlation
+  // value1  = time in seconds
+  // value2  = temperature in degrees C
+  // value3  = voltage in V
+  // value4  = echoed command value1
+  // value5  = echoed command value2
+  // flags.0 = 1 once any command has been received
+  payload.id1 = PACKET_TYPE_TELEMETRY;
   payload.id2 = telemetry_counter & 0xFF;
   payload.id3 = latest_command.id1;
   payload.id4 = latest_command.id2;

@@ -72,7 +72,8 @@ inline const char* protocolToString(RCProtocol_t protocol) {
 enum : uint8_t {
   RCMSG_TYPE_DATA = 0,
   RCMSG_TYPE_HEARTBEAT = 3,
-  RCMSG_TYPE_IP_DISCOVERY = 4  // WiFi IP discovery broadcast
+  RCMSG_TYPE_IP_DISCOVERY = 4,  // WiFi IP discovery broadcast
+  RCMSG_TYPE_HELLO = 5          // ESP-NOW discovery / channel negotiation
 };
 
 // ========== Struct Sizes ==========
