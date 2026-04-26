@@ -65,7 +65,7 @@ inline const char* protocolToString(RCProtocol_t protocol) {
 #define HEARTBEAT_INTERVAL_MS   100   // How often to send heartbeats (ms)
 #endif
 #ifndef HEARTBEAT_TIMEOUT_MS  
-#define HEARTBEAT_TIMEOUT_MS    300   // Connection timeout without heartbeat (ms)
+#define HEARTBEAT_TIMEOUT_MS    1000  // Connection timeout without heartbeat (ms)
 #endif
 
 // ========== Message Types ==========

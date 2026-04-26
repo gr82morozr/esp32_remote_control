@@ -28,7 +28,9 @@ ESP32_RC_ESPNOW::~ESP32_RC_ESPNOW() {
 void ESP32_RC_ESPNOW::connect() {
   determineInitialChannelState();
   negotiated_channel_ = 0;
+  negotiation_started_ms_ = 0;
   negotiation_impossible_ = false;
+  awaiting_link_confirmation_ = false;
   ensureBroadcastPeerRegistered();
   ESP32RemoteControl::connect();
 }
@@ -208,13 +210,38 @@ String ESP32_RC_ESPNOW::formatAddr(const uint8_t addr[RC_ADDR_SIZE]) const {
   return String(buf);
 }
 
+void ESP32_RC_ESPNOW::checkHeartbeat() {
+  ESP32RemoteControl::checkHeartbeat();
+
+  if (conn_state_ == RCConnectionState_t::CONNECTED) {
+    awaiting_link_confirmation_ = false;
+    return;
+  }
+
+  if (!awaiting_link_confirmation_) {
+    return;
+  }
+
+  if ((millis() - negotiation_started_ms_) <= heartbeat_timeout_ms_) {
+    return;
+  }
+
+  LOG_INFO("ESP-NOW link confirmation timed out, returning to discovery");
+  awaiting_link_confirmation_ = false;
+  negotiated_channel_ = 0;
+  negotiation_started_ms_ = 0;
+  preferred_channel_ = current_channel_;
+  unsetPeerAddr();
+}
+
 void ESP32_RC_ESPNOW::sendSysMsg(const uint8_t msgType) {
   if (msgType != RCMSG_TYPE_HEARTBEAT) {
     ESP32RemoteControl::sendSysMsg(msgType);
     return;
   }
 
-  if (conn_state_ == RCConnectionState_t::CONNECTED) {
+  if (conn_state_ == RCConnectionState_t::CONNECTED ||
+      awaiting_link_confirmation_) {
     ESP32RemoteControl::sendSysMsg(msgType);
     return;
   }
@@ -238,7 +265,8 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t& msg) {
   const bool track_metrics =
       (msg.type != RCMSG_TYPE_HEARTBEAT && msg.type != RCMSG_TYPE_HELLO);
 
-  if (conn_state_ == RCConnectionState_t::CONNECTED) {
+  if (conn_state_ == RCConnectionState_t::CONNECTED ||
+      awaiting_link_confirmation_) {
     target_addr = peer_addr_;
   } else {
     target_addr = bcast;
@@ -325,6 +353,8 @@ void ESP32_RC_ESPNOW::unsetPeerAddr() {
   }
 
   negotiated_channel_ = 0;
+  negotiation_started_ms_ = 0;
+  awaiting_link_confirmation_ = false;
   if (!channel_locked_) {
     preferred_channel_ = current_channel_;
   }
@@ -370,7 +400,8 @@ void ESP32_RC_ESPNOW::handleHelloMessage(const uint8_t* mac, const RCMessage_t& 
 
 void ESP32_RC_ESPNOW::completeNegotiationWithPeer(const uint8_t* peer_mac,
                                                   uint8_t agreed_channel) {
-  if (conn_state_ == RCConnectionState_t::CONNECTED &&
+  if ((conn_state_ == RCConnectionState_t::CONNECTED ||
+       awaiting_link_confirmation_) &&
       memcmp(peer_addr_, peer_mac, RC_ADDR_SIZE) == 0 &&
       negotiated_channel_ == agreed_channel) {
     return;
@@ -391,17 +422,18 @@ void ESP32_RC_ESPNOW::completeNegotiationWithPeer(const uint8_t* peer_mac,
 
   preferred_channel_ = agreed_channel;
   negotiated_channel_ = agreed_channel;
+  negotiation_started_ms_ = millis();
+  awaiting_link_confirmation_ = true;
 
   RCAddress_t peer_addr = {};
   memcpy(peer_addr, peer_mac, RC_ADDR_SIZE);
   onPeerDiscovered(peer_addr, formatAddr(peer_mac).c_str());
 
   setPeerAddr(peer_mac);
-  conn_state_ = RCConnectionState_t::CONNECTED;
-  last_heartbeat_rx_ms_ = millis();
+  conn_state_ = RCConnectionState_t::CONNECTING;
 
-  LOG_INFO("ESP-NOW paired with %s on channel %u", formatAddr(peer_mac).c_str(),
-           agreed_channel);
+  LOG_INFO("ESP-NOW negotiated peer %s on channel %u, awaiting heartbeat",
+           formatAddr(peer_mac).c_str(), agreed_channel);
 }
 
 uint8_t ESP32_RC_ESPNOW::chooseNegotiatedChannel(const HelloPayload& peer_hello,
@@ -478,10 +510,19 @@ void ESP32_RC_ESPNOW::onDataRecvStatic(const uint8_t* mac, const uint8_t* data, 
     return;
   }
 
+  const bool is_expected_pending_peer =
+      instance_->awaiting_link_confirmation_ &&
+      memcmp(mac, instance_->peer_addr_, RC_ADDR_SIZE) == 0;
+
   if (msg.type == RCMSG_TYPE_DATA &&
-      instance_->conn_state_ != RCConnectionState_t::CONNECTED) {
+      instance_->conn_state_ != RCConnectionState_t::CONNECTED &&
+      !is_expected_pending_peer) {
     LOG_DEBUG("Ignoring ESP-NOW data packet before HELLO negotiation completes");
     return;
+  }
+
+  if (is_expected_pending_peer) {
+    instance_->awaiting_link_confirmation_ = false;
   }
 
   instance_->onDataReceived(msg);

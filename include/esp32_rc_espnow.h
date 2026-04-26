@@ -26,6 +26,7 @@ class ESP32_RC_ESPNOW : public ESP32RemoteControl {
 
  protected:
   // adding ESPNOW specific paring steps
+  void checkHeartbeat() override;
   void sendSysMsg(const uint8_t msgType) override;
   void lowLevelSend(const RCMessage_t& msg) override;
   void setPeerAddr(const uint8_t* peer_addr) override;
@@ -102,8 +103,10 @@ class ESP32_RC_ESPNOW : public ESP32RemoteControl {
   uint8_t discovery_hop_step_ = 1;
   uint8_t node_priority_ = 0;
   uint8_t device_id_ = 0;
+  uint32_t negotiation_started_ms_ = 0;
   bool channel_locked_ = false;
   bool negotiation_impossible_ = false;
+  bool awaiting_link_confirmation_ = false;
   // ESPNOW callback glue (static --> internal member)
   static void onDataRecvStatic(const uint8_t* mac, const uint8_t* data, int len);
   static void onDataSentStatic(const uint8_t* mac, esp_now_send_status_t status);
