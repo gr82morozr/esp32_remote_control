@@ -89,6 +89,7 @@ class ESP32_RC_ESPNOW : public ESP32RemoteControl {
   bool ensurePeerRegistered(const uint8_t* peer_addr);
   bool ensureBroadcastPeerRegistered();
   void handleHelloMessage(const uint8_t* mac, const RCMessage_t& msg);
+  void processPendingNegotiation();
   void completeNegotiationWithPeer(const uint8_t* peer_mac, uint8_t agreed_channel);
   uint8_t chooseNegotiatedChannel(const HelloPayload& peer_hello, const uint8_t* peer_mac, bool& impossible) const;
   uint8_t getCurrentChannel() const;
@@ -104,9 +105,12 @@ class ESP32_RC_ESPNOW : public ESP32RemoteControl {
   uint8_t node_priority_ = 0;
   uint8_t device_id_ = 0;
   uint32_t negotiation_started_ms_ = 0;
+  uint8_t pending_negotiation_channel_ = 0;
+  uint8_t pending_peer_mac_[RC_ADDR_SIZE] = {0};
   bool channel_locked_ = false;
   bool negotiation_impossible_ = false;
   bool awaiting_link_confirmation_ = false;
+  bool pending_negotiation_ready_ = false;
   // ESPNOW callback glue (static --> internal member)
   static void onDataRecvStatic(const uint8_t* mac, const uint8_t* data, int len);
   static void onDataSentStatic(const uint8_t* mac, esp_now_send_status_t status);

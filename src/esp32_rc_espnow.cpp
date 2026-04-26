@@ -29,8 +29,11 @@ void ESP32_RC_ESPNOW::connect() {
   determineInitialChannelState();
   negotiated_channel_ = 0;
   negotiation_started_ms_ = 0;
+  pending_negotiation_channel_ = 0;
+  memset(pending_peer_mac_, 0, sizeof(pending_peer_mac_));
   negotiation_impossible_ = false;
   awaiting_link_confirmation_ = false;
+  pending_negotiation_ready_ = false;
   ensureBroadcastPeerRegistered();
   ESP32RemoteControl::connect();
 }
@@ -211,10 +214,16 @@ String ESP32_RC_ESPNOW::formatAddr(const uint8_t addr[RC_ADDR_SIZE]) const {
 }
 
 void ESP32_RC_ESPNOW::checkHeartbeat() {
-  ESP32RemoteControl::checkHeartbeat();
+  processPendingNegotiation();
 
   if (conn_state_ == RCConnectionState_t::CONNECTED) {
     awaiting_link_confirmation_ = false;
+
+    if ((millis() - last_heartbeat_rx_ms_) > heartbeat_timeout_ms_) {
+      LOG_INFO("ESP-NOW peer timed out, restarting discovery");
+      unsetPeerAddr();
+      conn_state_ = RCConnectionState_t::CONNECTING;
+    }
     return;
   }
 
@@ -227,14 +236,13 @@ void ESP32_RC_ESPNOW::checkHeartbeat() {
   }
 
   LOG_INFO("ESP-NOW link confirmation timed out, returning to discovery");
-  awaiting_link_confirmation_ = false;
-  negotiated_channel_ = 0;
-  negotiation_started_ms_ = 0;
-  preferred_channel_ = current_channel_;
   unsetPeerAddr();
+  conn_state_ = RCConnectionState_t::CONNECTING;
 }
 
 void ESP32_RC_ESPNOW::sendSysMsg(const uint8_t msgType) {
+  processPendingNegotiation();
+
   if (msgType != RCMSG_TYPE_HEARTBEAT) {
     ESP32RemoteControl::sendSysMsg(msgType);
     return;
@@ -256,6 +264,27 @@ void ESP32_RC_ESPNOW::sendSysMsg(const uint8_t msgType) {
 
   RCMessage_t hello = makeHelloMessage();
   sendMsg(hello);
+}
+
+void ESP32_RC_ESPNOW::processPendingNegotiation() {
+  if (!pending_negotiation_ready_) {
+    return;
+  }
+
+  uint8_t peer_mac[RC_ADDR_SIZE] = {0};
+  memcpy(peer_mac, pending_peer_mac_, RC_ADDR_SIZE);
+  const uint8_t agreed_channel = pending_negotiation_channel_;
+
+  pending_negotiation_ready_ = false;
+  pending_negotiation_channel_ = 0;
+  memset(pending_peer_mac_, 0, sizeof(pending_peer_mac_));
+
+  if (agreed_channel < kMinEspnowChannel || agreed_channel > kMaxEspnowChannel) {
+    LOG_ERROR("Discarding pending negotiation with invalid channel %u", agreed_channel);
+    return;
+  }
+
+  completeNegotiationWithPeer(peer_mac, agreed_channel);
 }
 
 void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t& msg) {
@@ -365,7 +394,11 @@ void ESP32_RC_ESPNOW::unsetPeerAddr() {
 
   negotiated_channel_ = 0;
   negotiation_started_ms_ = 0;
+  pending_negotiation_channel_ = 0;
+  memset(pending_peer_mac_, 0, sizeof(pending_peer_mac_));
   awaiting_link_confirmation_ = false;
+  pending_negotiation_ready_ = false;
+  negotiation_impossible_ = false;
   if (!channel_locked_) {
     preferred_channel_ = current_channel_;
   }
@@ -379,6 +412,14 @@ void ESP32_RC_ESPNOW::handleHelloMessage(const uint8_t* mac, const RCMessage_t& 
   }
 
   if (memcmp(mac, my_addr_, RC_ADDR_SIZE) == 0) {
+    return;
+  }
+
+  if ((conn_state_ == RCConnectionState_t::CONNECTED ||
+       awaiting_link_confirmation_) &&
+      memcmp(peer_addr_, mac, RC_ADDR_SIZE) != 0) {
+    LOG_DEBUG("Ignoring HELLO from unexpected peer %s while linked to %s",
+              formatAddr(mac).c_str(), formatAddr(peer_addr_).c_str());
     return;
   }
 
@@ -406,7 +447,9 @@ void ESP32_RC_ESPNOW::handleHelloMessage(const uint8_t* mac, const RCMessage_t& 
     return;
   }
 
-  completeNegotiationWithPeer(mac, agreed_channel);
+  memcpy(pending_peer_mac_, mac, RC_ADDR_SIZE);
+  pending_negotiation_channel_ = agreed_channel;
+  pending_negotiation_ready_ = true;
 }
 
 void ESP32_RC_ESPNOW::completeNegotiationWithPeer(const uint8_t* peer_mac,
@@ -431,6 +474,7 @@ void ESP32_RC_ESPNOW::completeNegotiationWithPeer(const uint8_t* peer_mac,
     return;
   }
 
+  negotiation_impossible_ = false;
   preferred_channel_ = agreed_channel;
   negotiated_channel_ = agreed_channel;
   negotiation_started_ms_ = millis();
