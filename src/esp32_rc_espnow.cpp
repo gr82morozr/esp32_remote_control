@@ -265,6 +265,16 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t& msg) {
   const bool track_metrics =
       (msg.type != RCMSG_TYPE_HEARTBEAT && msg.type != RCMSG_TYPE_HELLO);
 
+  // HELLO is only valid during discovery. Once a peer/channel has been negotiated,
+  // stale queued HELLO frames must not keep hopping channels or interfere with the
+  // first unicast heartbeat exchange.
+  if (msg.type == RCMSG_TYPE_HELLO &&
+      (awaiting_link_confirmation_ ||
+       conn_state_ == RCConnectionState_t::CONNECTED)) {
+    LOG_DEBUG("Dropping stale HELLO after negotiation");
+    return;
+  }
+
   if (conn_state_ == RCConnectionState_t::CONNECTED ||
       awaiting_link_confirmation_) {
     target_addr = peer_addr_;
@@ -308,6 +318,7 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t& msg) {
                 msg.type, MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
     }
     if (msg.type == RCMSG_TYPE_HELLO &&
+        !awaiting_link_confirmation_ &&
         conn_state_ != RCConnectionState_t::CONNECTED) {
       advanceDiscoveryChannel();
     }
