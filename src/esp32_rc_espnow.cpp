@@ -214,8 +214,6 @@ String ESP32_RC_ESPNOW::formatAddr(const uint8_t addr[RC_ADDR_SIZE]) const {
 }
 
 void ESP32_RC_ESPNOW::checkHeartbeat() {
-  processPendingNegotiation();
-
   if (conn_state_ == RCConnectionState_t::CONNECTED) {
     awaiting_link_confirmation_ = false;
 
@@ -241,8 +239,6 @@ void ESP32_RC_ESPNOW::checkHeartbeat() {
 }
 
 void ESP32_RC_ESPNOW::sendSysMsg(const uint8_t msgType) {
-  processPendingNegotiation();
-
   if (msgType != RCMSG_TYPE_HEARTBEAT) {
     ESP32RemoteControl::sendSysMsg(msgType);
     return;
@@ -288,6 +284,8 @@ void ESP32_RC_ESPNOW::processPendingNegotiation() {
 }
 
 void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t& msg) {
+  processPendingNegotiation();
+
   esp_err_t sendResult = ESP_FAIL;
   uint8_t* target_addr;
   static uint8_t bcast[RC_ADDR_SIZE] = RC_BROADCAST_MAC;
