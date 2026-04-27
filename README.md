@@ -2,15 +2,15 @@
 
 Symmetric peer-to-peer communication for ESP32 devices with automatic peer
 discovery, heartbeat-based connection management, and a unified API across
-multiple radios. Every node runs the same firmware and negotiates roles at
-runtime, so there is no master/slave split to maintain.
+multiple radios. Every node uses the same transport lifecycle and negotiates
+peers at runtime, so there is no master/slave split to maintain.
 
 ## Highlights
 
 - Single 32-byte message with a shared 25-byte payload structure for every
   protocol
 - Automatic discovery, handshake, and connection monitoring with 100 ms
-  heartbeats and 300 ms timeouts
+  heartbeats and 1000 ms timeouts
 - Switch transports at compile time through one macro while keeping the same API
 - Fast mode, using a single-slot queue, or reliable mode, using 10-slot queues
   with retries
@@ -121,6 +121,21 @@ void loop() {
 }
 ```
 
+### Symmetric ESP-NOW Usage
+
+ESP-NOW is invoked the same way on both peers:
+
+1. Create the controller with `createProtocolInstance(RC_PROTO_ESPNOW, ...)`.
+2. Register either a receive callback with `setOnReceiveMsgHandler()` or poll
+   with `recvData()`.
+3. Call `connect()` on every node.
+4. Call `sendData()` from any node when it has payload to publish.
+
+The library does not require a dedicated initiator or listener. If one sketch
+behaves like a bridge and another behaves like a sensor, that difference is only
+in the application logic built on top of the same `connect()`, `sendData()`,
+and receive path.
+
 ## Configuration
 
 All user-tunable settings live in `include/esp32_rc_user_config.h`:
@@ -177,12 +192,13 @@ Time(s) | Protocol | Conn | Send(OK/Fail/Rate/TPS) | Recv(OK/Fail/Rate/TPS) | To
 
 ## Examples
 
-- `examples/basic/basic_espnow.cpp` - introductory ESP-NOW sender/receiver pair
+- `examples/basic/basic_espnow.cpp` - symmetric ESP-NOW example; flash the same sketch to both nodes
 - `examples/basic/basic_nrf24.cpp` - nRF24L01+ handshake, queueing, and data flow
 - `examples/basic/basic_wifi.cpp` - raw 802.11 discovery experiment
 - `examples/callback/basic_espnow_callback.cpp` - receive callbacks instead of polling
 - `examples/basic/remote_blinkled.cpp` - payload-driven LED control sketch
-- `examples/serial_espnow_bridge/serial_espnow_bridge.cpp` - USB-to-ESP-NOW CSV bridge firmware
+- `examples/serial_espnow_bridge/serial_espnow_bridge.cpp` - USB-to-ESP-NOW CSV bridge built on the same symmetric API
+- `examples/serial_espnow_bridge/dummy_sensor_collector.cpp` - peer sketch that uses the same ESP-NOW lifecycle with different application behavior
 - `examples/keyboard_remote_control/keyboard_receiver.cpp` - robot-style command consumer
 
 Each sketch is single-source and can be uploaded directly with PlatformIO:
@@ -209,14 +225,23 @@ RC_ERROR:bad_csv
 Incoming ESP-NOW packets are printed as:
 
 ```text
-RC_DATA:id1,id2,id3,id4,value1,value2,value3,value4,value5,flags
+id1=<v>,id2=<v>,id3=<v>,id4=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,flags=<v>
 ```
 
 Successfully submitted serial packets are echoed as:
 
 ```text
-RC_SENT:id1,id2,id3,id4,value1,value2,value3,value4,value5,flags
+RC_SENT:id1=<v>,id2=<v>,id3=<v>,id4=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,flags=<v>
 ```
+
+The bridge example is intentionally application-asymmetric, but its ESP-NOW
+usage is still symmetric with the peer sketch: both sides create the same
+controller type, call `connect()`, register receive handling, and use
+`sendData()` for outbound payloads.
+
+If the bridge is receiving telemetry packets with a sequence counter in `id2`,
+you can enable or disable gap reporting at compile time with
+`BRIDGE_ENABLE_DROP_DETECT` in [src/mcu_a_main.cpp](/d:/projects.git/esp32_remote_control/src/mcu_a_main.cpp:12).
 
 ## PC Utilities
 

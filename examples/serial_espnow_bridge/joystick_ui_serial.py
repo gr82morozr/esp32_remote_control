@@ -480,7 +480,7 @@ class JoystickWindow(ui_serial.MainWindow):
         self,
         config: ui_serial.ChannelConfig,
         default_port: Optional[str] = None,
-        default_baud: int = 115200,
+        default_baud: int = 230400,
         auto_connect: bool = False,
         *,
         axis_deadzone: float = 0.10,
@@ -1208,7 +1208,7 @@ def main() -> None:
     window = JoystickWindow(
         config,
         default_port=None,
-        default_baud=115200,
+        default_baud=230400,
         auto_connect=False,
         axis_deadzone=0.10,
         poll_hz=50,

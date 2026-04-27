@@ -463,7 +463,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self,
         config: ChannelConfig,
         default_port: Optional[str] = None,
-        default_baud: int = 115200,
+        default_baud: int = 230400,
         auto_connect: bool = False,
     ) -> None:
         super().__init__()
@@ -1105,7 +1105,7 @@ def parse_args() -> argparse.Namespace:
         help="Serial port name, e.g. COM5 or /dev/ttyUSB0.",
     )
     parser.add_argument(
-        "--baud", type=int, default=115200, help="Serial baud rate (default: 115200)."
+        "--baud", type=int, default=230400, help="Serial baud rate (default: 230400)."
     )
     parser.add_argument(
         "--auto-connect",

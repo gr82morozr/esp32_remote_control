@@ -39,7 +39,7 @@ PC/Device (CSV Text) <-> ESP32 (CSV Bridge) <-> [ESP-NOW] <-> Remote Device(s)
 2. Install required libraries:
    - ESP32 Remote Control Library (this library)
 3. Flash to your ESP32
-4. Open Serial Monitor (115200 baud) to verify operation
+4. Open Serial Monitor (230400 baud) to verify operation
 
 Expected startup output:
 ```
@@ -58,8 +58,8 @@ Send one newline-terminated CSV packet per message:
 - Invalid input returns `RC_ERROR:bad_csv`
 
 #### Receive Data (ESPNOW → Serial)  
-- Incoming ESPNOW packets are printed as `RC_DATA:id1,id2,id3,id4,value1,value2,value3,value4,value5,flags`
-- Successfully submitted serial packets are echoed as `RC_SENT:id1,id2,id3,id4,value1,value2,value3,value4,value5,flags`
+- Incoming ESPNOW packets are printed as `id1=<v>,id2=<v>,id3=<v>,id4=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,flags=<v>`
+- Successfully submitted serial packets are echoed as `RC_SENT:id1=<v>,id2=<v>,id3=<v>,id4=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,flags=<v>`
 
 ## 📡 Data Format
 
@@ -95,7 +95,7 @@ import serial
 import struct
 
 # Connect to bridge
-bridge = serial.Serial('COM3', 115200)
+bridge = serial.Serial('COM3', 230400)
 
 # Send structured data
 id1, id2, id3, id4 = 1, 2, 3, 4
@@ -157,7 +157,7 @@ ESP32 Serial-ESPNOW Keyboard Bridge
 
 Enter port number (1-2) or 'q' to quit:
 > 1
-✅ Connected to COM3 at 115200 baud
+✅ Connected to COM3 at 230400 baud
 
 === Available Commands ===
 📝 Letters: a-z (ID1: 1-26)
@@ -241,7 +241,7 @@ Received: 05 06 07 08 41 20 00 00 42 48 00 00 42 C8 00 00 43 48 00 00 43 96 00 0
 3. **Timing** - Add small delays between transmissions if needed
 
 ### Connection Issues
-1. **Baud rate** - Ensure 115200 baud on both sides
+1. **Baud rate** - Ensure 230400 baud on both sides
 2. **Port permissions** - On Linux/Mac: `sudo chmod 666 /dev/ttyUSB0`
 3. **ESP32 power** - Ensure adequate power supply (500mA+)
 

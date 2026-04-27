@@ -580,8 +580,14 @@ bool ESP32RemoteControl::sendMsg(const RCMessage_t& msg) {
     // Normal mode: send to the queue
     BaseType_t ok = xQueueSend(queue_send_, &msg, 0);
     if (ok != pdTRUE) {
-      LOG_ERROR("Failed to enqueue message for sending");
-      return false;
+      RCMessage_t dropped_msg;
+      if (xQueueReceive(queue_send_, &dropped_msg, 0) == pdTRUE) {
+        ok = xQueueSend(queue_send_, &msg, 0);
+      }
+      if (ok != pdTRUE) {
+        LOG_ERROR("Failed to enqueue message for sending");
+        return false;
+      }
     }
   }
   // Notify the task to send the message immediately

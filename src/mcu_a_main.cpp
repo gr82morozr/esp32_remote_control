@@ -14,8 +14,11 @@ printed later from loop(), keeping callback work short and non-blocking.
 
 static constexpr size_t SERIAL_LINE_MAX = 128;
 static constexpr uint8_t RX_QUEUE_DEPTH = 16;
-static constexpr uint8_t PACKET_TYPE_TELEMETRY = 2;
+#ifndef BRIDGE_ENABLE_DROP_DETECT
+#define BRIDGE_ENABLE_DROP_DETECT 0
+#endif
 
+static constexpr uint8_t PACKET_TYPE_TELEMETRY = 2;
 ESP32RemoteControl* espnow_controller = nullptr;
 
 char serial_line[SERIAL_LINE_MAX] = {};
@@ -46,6 +49,11 @@ struct PayloadRing {
 
 PayloadRing rx_queue;
 volatile uint16_t rx_overflow_count = 0;
+#if BRIDGE_ENABLE_DROP_DETECT
+bool have_last_telemetry_seq = false;
+uint8_t last_telemetry_seq = 0;
+float last_telemetry_time = 0.0f;
+#endif
 
 bool parseUInt8Field(char* field, uint8_t& value) {
   if (!field || *field == '\0') return false;
@@ -106,24 +114,10 @@ bool parsePayloadCsv(char* line, RCPayload_t& payload) {
   return field_count == 10;
 }
 
-void printPayloadCsv(const char* prefix, const RCPayload_t& payload) {
-  Serial.printf("%s:%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%u\n",
-    prefix,
-    payload.id1, payload.id2, payload.id3, payload.id4,
-    payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
-    payload.flags);
-}
-
-void printReceivedPayload(const RCPayload_t& payload) {
-  if (payload.id1 == PACKET_TYPE_TELEMETRY) {
-    Serial.printf(
-      "packet_type=%u,sequence=%u,cmd_id1=%u,cmd_id2=%u,time=%.2f,temp=%.2f,voltage=%.2f,cmd_value1=%.2f,cmd_value2=%.2f,command_seen=%u\n",
-      payload.id1, payload.id2, payload.id3, payload.id4,
-      payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
-      payload.flags & 0x01);
-    return;
+void printPayloadFields(const char* prefix, const RCPayload_t& payload) {
+  if (prefix && prefix[0] != '\0') {
+    Serial.printf("%s:", prefix);
   }
-
   Serial.printf(
     "id1=%u,id2=%u,id3=%u,id4=%u,value1=%.2f,value2=%.2f,value3=%.2f,value4=%.2f,value5=%.2f,flags=%u\n",
     payload.id1, payload.id2, payload.id3, payload.id4,
@@ -131,10 +125,44 @@ void printReceivedPayload(const RCPayload_t& payload) {
     payload.flags);
 }
 
+#if BRIDGE_ENABLE_DROP_DETECT
+void reportTelemetryGap(const RCPayload_t& payload) {
+  if (payload.id1 != PACKET_TYPE_TELEMETRY) {
+    return;
+  }
+
+  if (have_last_telemetry_seq && payload.value1 + 0.5f < last_telemetry_time) {
+    have_last_telemetry_seq = false;
+  }
+
+  if (have_last_telemetry_seq) {
+    const uint8_t expected_seq = static_cast<uint8_t>(last_telemetry_seq + 1);
+    if (payload.id2 != expected_seq) {
+      const uint8_t missing_count =
+          static_cast<uint8_t>(payload.id2 - expected_seq);
+      Serial.printf(
+        "DROP_DETECTED:last_seq=%u,current_seq=%u,missing=%u\n",
+        last_telemetry_seq, payload.id2, missing_count);
+    }
+  }
+
+  have_last_telemetry_seq = true;
+  last_telemetry_seq = payload.id2;
+  last_telemetry_time = payload.value1;
+}
+#endif
+
+void printReceivedPayload(const RCPayload_t& payload) {
+#if BRIDGE_ENABLE_DROP_DETECT
+  reportTelemetryGap(payload);
+#endif
+  printPayloadFields("", payload);
+}
+
 void onDataReceived(const RCMessage_t& msg) {
   const RCPayload_t* payload = msg.getPayload();
   if (!rx_queue.push(*payload)) {
-    rx_overflow_count++;
+    __atomic_add_fetch(&rx_overflow_count, 1, __ATOMIC_RELAXED);
   }
 }
 
@@ -147,7 +175,7 @@ void handleSerialLine(char* line) {
   }
 
   if (espnow_controller->sendData(payload)) {
-    printPayloadCsv("RC_SENT", payload);
+    printPayloadFields("RC_SENT", payload);
   } else {
     Serial.println("RC_ERROR:send_failed");
   }
@@ -180,9 +208,8 @@ void pollSerialInput() {
 }
 
 void flushReceivedData() {
-  uint16_t overflow_count = rx_overflow_count;
+  uint16_t overflow_count = __atomic_exchange_n(&rx_overflow_count, 0, __ATOMIC_RELAXED);
   if (overflow_count > 0) {
-    rx_overflow_count = 0;
     Serial.printf("RC_ERROR:rx_overflow,%u\n", overflow_count);
   }
 
@@ -193,7 +220,7 @@ void flushReceivedData() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(230400);
   delay(1000);
 
   Serial.println("RC_STATUS:starting");

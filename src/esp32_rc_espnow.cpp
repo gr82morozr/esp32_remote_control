@@ -291,8 +291,8 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t& msg) {
   esp_err_t sendResult = ESP_FAIL;
   uint8_t* target_addr;
   static uint8_t bcast[RC_ADDR_SIZE] = RC_BROADCAST_MAC;
-  const bool track_metrics =
-      (msg.type != RCMSG_TYPE_HEARTBEAT && msg.type != RCMSG_TYPE_HELLO);
+  const bool is_system_message =
+      (msg.type == RCMSG_TYPE_HEARTBEAT || msg.type == RCMSG_TYPE_HELLO);
 
   // HELLO is only valid during discovery. Once a peer/channel has been negotiated,
   // stale queued HELLO frames must not keep hopping channels or interfere with the
@@ -312,14 +312,6 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t& msg) {
   }
 
   for (int retry = 0; retry <= MAX_SEND_RETRIES; retry++) {
-    if (!_ring.push(track_metrics)) {
-      LOG_ERROR("ESP-NOW send status ring overflow for message type %u", msg.type);
-      if (track_metrics) {
-        send_metrics_.addFailure();
-      }
-      return;
-    }
-
     sendResult = esp_now_send(
         target_addr, reinterpret_cast<const uint8_t*>(&msg), sizeof(RCMessage_t));
 
@@ -330,21 +322,22 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t& msg) {
       break;
     }
 
-    if (!_ring.rollbackLast(track_metrics)) {
-      LOG_ERROR("ESP-NOW failed to roll back send metadata after immediate send error");
+    if (sendResult != ESP_ERR_ESPNOW_NO_MEM || retry >= MAX_SEND_RETRIES) {
+      break;
     }
 
-    if (retry < MAX_SEND_RETRIES) {
-      LOG_DEBUG("ESP-NOW send failed (attempt %d/%d): %s, retrying...",
-                retry + 1, MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
-      DELAY(pdMS_TO_TICKS(RETRY_DELAY_MS));
-    }
+    LOG_DEBUG("ESP-NOW send queue full (attempt %d/%d), retrying after %d ms",
+              retry + 1, MAX_SEND_RETRIES + 1, RETRY_DELAY_MS);
+    DELAY(pdMS_TO_TICKS(RETRY_DELAY_MS));
   }
 
-  if (!track_metrics) {
-    if (sendResult != ESP_OK) {
-      LOG_ERROR("ESP-NOW system message type %u failed after %d retries: %s",
-                msg.type, MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
+  if (is_system_message) {
+    if (sendResult != ESP_OK && sendResult != ESP_ERR_ESPNOW_NO_MEM) {
+      LOG_ERROR("ESP-NOW system message type %u failed: %s",
+                msg.type, esp_err_to_name(sendResult));
+    } else if (sendResult == ESP_ERR_ESPNOW_NO_MEM) {
+      LOG_DEBUG("ESP-NOW system message type %u skipped after queue stayed full",
+                msg.type);
     }
     if (msg.type == RCMSG_TYPE_HELLO &&
         !awaiting_link_confirmation_ &&
@@ -354,13 +347,20 @@ void ESP32_RC_ESPNOW::lowLevelSend(const RCMessage_t& msg) {
     return;
   }
 
-  if (sendResult != ESP_OK) {
-    LOG_ERROR("ESP-NOW send failed after %d retries: %s", MAX_SEND_RETRIES + 1,
-              esp_err_to_name(sendResult));
-    send_metrics_.addFailure();
-  } else {
-    LOG_DEBUG("ESP-NOW sent message type %u successfully", msg.type);
+  if (sendResult == ESP_OK) {
+    send_metrics_.addSuccess();
+    LOG_DEBUG("ESP-NOW accepted message type %u for transmit", msg.type);
+    return;
   }
+
+  if (sendResult == ESP_ERR_ESPNOW_NO_MEM) {
+    LOG_DEBUG("ESP-NOW data send queue stayed full after %d attempts",
+              MAX_SEND_RETRIES + 1);
+  } else {
+    LOG_ERROR("ESP-NOW send failed after %d attempts: %s",
+              MAX_SEND_RETRIES + 1, esp_err_to_name(sendResult));
+  }
+  send_metrics_.addFailure();
 }
 
 void ESP32_RC_ESPNOW::setPeerAddr(const uint8_t* peer_addr) {
@@ -621,23 +621,11 @@ RCMessage_t ESP32_RC_ESPNOW::parseRawData(const uint8_t* data, size_t len) {
 
 void ESP32_RC_ESPNOW::onDataSentInternal(const uint8_t* mac,
                                          esp_now_send_status_t status) {
-  bool track_metrics = false;
-  if (!_ring.pop(track_metrics)) {
-    LOG_ERROR("ESP-NOW send status callback without queued send metadata");
-    return;
-  }
-
-  if (!track_metrics) {
-    return;
-  }
-
   if (status == ESP_NOW_SEND_SUCCESS) {
     LOG_DEBUG("ESP-NOW message delivered successfully");
-    send_metrics_.addSuccess();
   } else {
     LOG_DEBUG("ESP-NOW send delivery failed to peer %s",
               mac ? formatAddr(mac).c_str() : "<null>");
-    send_metrics_.addFailure();
   }
 }
 

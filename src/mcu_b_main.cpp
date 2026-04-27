@@ -23,7 +23,8 @@ static constexpr uint8_t PACKET_TYPE_TELEMETRY = 2;
 
 ESP32RemoteControl* controller = nullptr;
 
-volatile bool command_received = false;
+portMUX_TYPE command_lock = portMUX_INITIALIZER_UNLOCKED;
+bool command_received = false;
 RCPayload_t latest_command = {};
 RCPayload_t telemetry = {};
 
@@ -33,8 +34,10 @@ uint32_t telemetry_counter = 0;
 void onCommandReceived(const RCMessage_t& msg) {
   const RCPayload_t* payload = msg.getPayload();
 
+  portENTER_CRITICAL(&command_lock);
   latest_command = *payload;
   command_received = true;
+  portEXIT_CRITICAL(&command_lock);
 
 #ifdef BUILTIN_LED
   digitalWrite(BUILTIN_LED, !digitalRead(BUILTIN_LED));
@@ -42,6 +45,14 @@ void onCommandReceived(const RCMessage_t& msg) {
 }
 
 void populateTelemetry(RCPayload_t& payload) {
+  RCPayload_t command_snapshot = {};
+  bool command_seen = false;
+
+  portENTER_CRITICAL(&command_lock);
+  command_snapshot = latest_command;
+  command_seen = command_received;
+  portEXIT_CRITICAL(&command_lock);
+
   telemetry_counter++;
 
   const float time_sec = millis() / 1000.0f;
@@ -58,16 +69,16 @@ void populateTelemetry(RCPayload_t& payload) {
   // flags.0 = 1 once any command has been received
   payload.id1 = PACKET_TYPE_TELEMETRY;
   payload.id2 = telemetry_counter & 0xFF;
-  payload.id3 = latest_command.id1;
-  payload.id4 = latest_command.id2;
+  payload.id3 = command_snapshot.id1;
+  payload.id4 = command_snapshot.id2;
 
   payload.value1 = time_sec;
   payload.value2 = 20.0f + sin(time_sec) * 5.0f;
   payload.value3 = 3.3f + sin(time_sec * 0.5f) * 0.1f;
-  payload.value4 = latest_command.value1;
-  payload.value5 = latest_command.value2;
+  payload.value4 = command_snapshot.value1;
+  payload.value5 = command_snapshot.value2;
 
-  payload.flags = command_received ? 0x01 : 0x00;
+  payload.flags = command_seen ? 0x01 : 0x00;
 }
 
 void printPlotterTelemetry(const RCPayload_t& payload) {
@@ -82,7 +93,7 @@ void printPlotterTelemetry(const RCPayload_t& payload) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(230400);
   delay(1000);
 
 #ifdef BUILTIN_LED

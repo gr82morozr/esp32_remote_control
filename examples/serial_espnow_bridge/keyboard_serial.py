@@ -205,6 +205,41 @@ def create_payload(command):
     )
 
 
+def parse_named_payload(line: str, prefix: str = ""):
+    """Parse `key=value,...` or `PREFIX:key=value,...` bridge output."""
+    fields_text = line
+    if prefix:
+        if not line.startswith(prefix):
+            return None
+        fields_text = line[len(prefix):]
+
+    if not fields_text.startswith("id1="):
+        return None
+
+    parsed = {}
+    for item in fields_text.split(','):
+        if '=' not in item:
+            return None
+        key, value = item.split('=', 1)
+        parsed[key.strip()] = value.strip()
+
+    try:
+        return {
+            'id1': int(parsed['id1']),
+            'id2': int(parsed['id2']),
+            'id3': int(parsed['id3']),
+            'id4': int(parsed['id4']),
+            'value1': float(parsed['value1']),
+            'value2': float(parsed['value2']),
+            'value3': float(parsed['value3']),
+            'value4': float(parsed['value4']),
+            'value5': float(parsed['value5']),
+            'flags': int(parsed['flags']),
+        }
+    except (KeyError, ValueError):
+        return None
+
+
 def serial_reader_thread(serial_conn, response_queue, stop_event):
     """Background thread to continuously read serial data"""
     line_buffer = ""
@@ -222,59 +257,28 @@ def serial_reader_thread(serial_conn, response_queue, stop_event):
                     line = line.strip()
                     
                     # Filter for RC_DATA messages only
-                    if line.startswith('RC_DATA:'):
-                        try:
-                            # Parse CSV data after RC_DATA: prefix
-                            csv_data = line[8:]  # Remove "RC_DATA:" prefix
-                            values = csv_data.split(',')
-                            
-                            if len(values) >= 10:
-                                # Parse all RCPayload_t fields
-                                id1 = int(values[0])
-                                id2 = int(values[1]) 
-                                id3 = int(values[2])
-                                id4 = int(values[3])
-                                value1 = float(values[4])
-                                value2 = float(values[5])
-                                value3 = float(values[6])
-                                value4 = float(values[7])
-                                value5 = float(values[8])
-                                flags = int(values[9])
-                                
-                                # Create comprehensive message with all fields
-                                message = (f"RX: ID[{id1:3},{id2:3},{id3:3},{id4:3}] "
-                                          f"VAL[{value1:6.1f},{value2:6.1f},{value3:6.1f},{value4:6.1f},{value5:6.1f}] "
-                                          f"FLAGS=0x{flags:02X}")
-                                response_queue.put(message)
-                        except (ValueError, IndexError):
-                            pass  # Ignore malformed RC_DATA lines
+                    if line.startswith('id1='):
+                        payload = parse_named_payload(line)
+                        if payload:
+                            message = (
+                                f"RX: ID[{payload['id1']:3},{payload['id2']:3},{payload['id3']:3},{payload['id4']:3}] "
+                                f"VAL[{payload['value1']:6.1f},{payload['value2']:6.1f},{payload['value3']:6.1f},"
+                                f"{payload['value4']:6.1f},{payload['value5']:6.1f}] "
+                                f"FLAGS=0x{payload['flags']:02X}"
+                            )
+                            response_queue.put(message)
                     
                     # Also show RC_SENT messages for debugging
                     elif line.startswith('RC_SENT:'):
-                        try:
-                            csv_data = line[8:]  # Remove "RC_SENT:" prefix
-                            values = csv_data.split(',')
-                            
-                            if len(values) >= 10:
-                                # Parse all RCPayload_t fields
-                                id1 = int(values[0])
-                                id2 = int(values[1])
-                                id3 = int(values[2]) 
-                                id4 = int(values[3])
-                                value1 = float(values[4])
-                                value2 = float(values[5])
-                                value3 = float(values[6])
-                                value4 = float(values[7])
-                                value5 = float(values[8])
-                                flags = int(values[9])
-                                
-                                # Create comprehensive message with all fields
-                                message = (f"TX: ID[{id1:3},{id2:3},{id3:3},{id4:3}] "
-                                          f"VAL[{value1:6.1f},{value2:6.1f},{value3:6.1f},{value4:6.1f},{value5:6.1f}] "
-                                          f"FLAGS=0x{flags:02X}")
-                                response_queue.put(message)
-                        except (ValueError, IndexError):
-                            pass
+                        payload = parse_named_payload(line, 'RC_SENT:')
+                        if payload:
+                            message = (
+                                f"TX: ID[{payload['id1']:3},{payload['id2']:3},{payload['id3']:3},{payload['id4']:3}] "
+                                f"VAL[{payload['value1']:6.1f},{payload['value2']:6.1f},{payload['value3']:6.1f},"
+                                f"{payload['value4']:6.1f},{payload['value5']:6.1f}] "
+                                f"FLAGS=0x{payload['flags']:02X}"
+                            )
+                            response_queue.put(message)
                             
             time.sleep(0.01)
         except Exception:
@@ -410,7 +414,7 @@ def main():
         return
 
     try:
-        serial_conn = serial.Serial(port, 115200, timeout=1)
+        serial_conn = serial.Serial(port, 230400, timeout=1)
         time.sleep(2)  # Wait for ESP32 reset
         print(f"Connected to {port}")
     except Exception as e:
