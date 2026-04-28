@@ -53,6 +53,7 @@ class ESP32_RC_ESPNOW : public ESP32RemoteControl {
   bool init();
   bool applyChannel(uint8_t channel);
   void determineInitialChannelState();
+  void refreshChannelStateFromWiFi();
   bool ensurePeerRegistered(const uint8_t* peer_addr);
   bool ensureBroadcastPeerRegistered();
   void handleHelloMessage(const uint8_t* mac, const RCMessage_t& msg);

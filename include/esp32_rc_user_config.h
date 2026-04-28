@@ -202,11 +202,11 @@
  * Note: Both devices must use the same SSID/password for peer-to-peer communication
  */
 #ifndef RC_WIFI_SSID
-#define RC_WIFI_SSID          "ESP32_RC_Network"
+#define RC_WIFI_SSID          "HOME-LAN"
 #endif
 
 #ifndef RC_WIFI_PASSWORD  
-#define RC_WIFI_PASSWORD      "esp32remote"
+#define RC_WIFI_PASSWORD      "l1sa72yf73"
 #endif
 
 /**

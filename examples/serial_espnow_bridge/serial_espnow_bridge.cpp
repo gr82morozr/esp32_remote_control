@@ -20,8 +20,27 @@ static constexpr uint8_t RX_QUEUE_DEPTH = 16;
 #ifndef BRIDGE_ENABLE_DROP_DETECT
 #define BRIDGE_ENABLE_DROP_DETECT 0
 #endif
+#ifndef BRIDGE_OUTPUT_MODE_CSV_VERBOSE
+#define BRIDGE_OUTPUT_MODE_CSV_VERBOSE 1
+#endif
+#ifndef BRIDGE_OUTPUT_MODE_CSV_COMPACT
+#define BRIDGE_OUTPUT_MODE_CSV_COMPACT 0
+#endif
+#ifndef BRIDGE_OUTPUT_MODE_BINARY
+#define BRIDGE_OUTPUT_MODE_BINARY 0
+#endif
+
+#if ((BRIDGE_OUTPUT_MODE_CSV_VERBOSE ? 1 : 0) + \
+     (BRIDGE_OUTPUT_MODE_CSV_COMPACT ? 1 : 0) + \
+     (BRIDGE_OUTPUT_MODE_BINARY ? 1 : 0)) != 1
+#error "Select exactly one bridge output mode"
+#endif
 
 static constexpr uint8_t PACKET_TYPE_TELEMETRY = 2;
+static constexpr uint8_t BRIDGE_BINARY_TYPE_RX = 1;
+static constexpr uint8_t BRIDGE_BINARY_TYPE_TX = 2;
+static constexpr uint8_t BRIDGE_BINARY_SYNC_0 = 0xAA;
+static constexpr uint8_t BRIDGE_BINARY_SYNC_1 = 0x55;
 
 ESP32RemoteControl* espnow_controller = nullptr;
 
@@ -119,6 +138,7 @@ bool parsePayloadCsv(char* line, RCPayload_t& payload) {
 }
 
 void printPayloadFields(const char* prefix, const RCPayload_t& payload) {
+#if BRIDGE_OUTPUT_MODE_CSV_VERBOSE
   if (prefix && prefix[0] != '\0') {
     Serial.printf("%s:", prefix);
   }
@@ -127,6 +147,33 @@ void printPayloadFields(const char* prefix, const RCPayload_t& payload) {
     payload.id1, payload.id2, payload.id3, payload.id4,
     payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
     payload.flags);
+#elif BRIDGE_OUTPUT_MODE_CSV_COMPACT
+  if (prefix && prefix[0] != '\0') {
+    Serial.printf("%s:", prefix);
+  }
+  Serial.printf(
+    "%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%u\n",
+    payload.id1, payload.id2, payload.id3, payload.id4,
+    payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
+    payload.flags);
+#else
+  const uint8_t* payload_bytes = reinterpret_cast<const uint8_t*>(&payload);
+  const uint8_t frame_type =
+      (prefix && prefix[0] != '\0') ? BRIDGE_BINARY_TYPE_TX : BRIDGE_BINARY_TYPE_RX;
+  uint8_t checksum = frame_type;
+  for (size_t i = 0; i < sizeof(payload); ++i) {
+    checksum ^= payload_bytes[i];
+  }
+
+  const uint8_t header[] = {
+    BRIDGE_BINARY_SYNC_0,
+    BRIDGE_BINARY_SYNC_1,
+    frame_type
+  };
+  Serial.write(header, sizeof(header));
+  Serial.write(payload_bytes, sizeof(payload));
+  Serial.write(&checksum, 1);
+#endif
 }
 
 #if BRIDGE_ENABLE_DROP_DETECT
@@ -157,7 +204,7 @@ void reportTelemetryGap(const RCPayload_t& payload) {
 #endif
 
 void printReceivedPayload(const RCPayload_t& payload) {
-#if BRIDGE_ENABLE_DROP_DETECT
+#if BRIDGE_ENABLE_DROP_DETECT && !BRIDGE_OUTPUT_MODE_BINARY
   reportTelemetryGap(payload);
 #endif
   printPayloadFields("", payload);

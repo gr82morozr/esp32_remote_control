@@ -98,19 +98,17 @@ bool ESP32_RC_ESPNOW::applyChannel(uint8_t channel) {
 }
 
 void ESP32_RC_ESPNOW::determineInitialChannelState() {
-  const wl_status_t wifi_status = WiFi.status();
-  const uint8_t live_channel = getCurrentChannel();
+  const bool was_locked = channel_locked_;
+  const uint8_t previous_channel = current_channel_;
+  refreshChannelStateFromWiFi();
 
-  if (wifi_status == WL_CONNECTED && live_channel >= kMinEspnowChannel &&
-      live_channel <= kMaxEspnowChannel) {
-    channel_locked_ = true;
-    current_channel_ = live_channel;
-    preferred_channel_ = live_channel;
-    LOG_INFO("ESP-NOW channel locked to AP channel %u", current_channel_);
+  if (channel_locked_) {
+    if (!was_locked || previous_channel != current_channel_) {
+      LOG_INFO("ESP-NOW channel locked to AP channel %u", current_channel_);
+    }
     return;
   }
 
-  channel_locked_ = false;
   if (preferred_channel_ < kMinEspnowChannel || preferred_channel_ > kMaxEspnowChannel) {
     preferred_channel_ = ESPNOW_CHANNEL;
   }
@@ -119,6 +117,22 @@ void ESP32_RC_ESPNOW::determineInitialChannelState() {
     current_channel_ = preferred_channel_;
   }
   LOG_INFO("ESP-NOW discovery starts on channel %u", current_channel_);
+}
+
+void ESP32_RC_ESPNOW::refreshChannelStateFromWiFi() {
+  const wl_status_t wifi_status = WiFi.status();
+  const uint8_t live_channel = getCurrentChannel();
+
+  if (wifi_status == WL_CONNECTED &&
+      live_channel >= kMinEspnowChannel &&
+      live_channel <= kMaxEspnowChannel) {
+    channel_locked_ = true;
+    current_channel_ = live_channel;
+    preferred_channel_ = live_channel;
+    return;
+  }
+
+  channel_locked_ = false;
 }
 
 bool ESP32_RC_ESPNOW::ensurePeerRegistered(const uint8_t* peer_addr) {
@@ -214,12 +228,15 @@ String ESP32_RC_ESPNOW::formatAddr(const uint8_t addr[RC_ADDR_SIZE]) const {
 }
 
 void ESP32_RC_ESPNOW::checkHeartbeat() {
+  refreshChannelStateFromWiFi();
+
   if (conn_state_ == RCConnectionState_t::CONNECTED) {
     awaiting_link_confirmation_ = false;
 
     if ((millis() - last_heartbeat_rx_ms_) > heartbeat_timeout_ms_) {
       LOG_INFO("ESP-NOW peer timed out, restarting discovery");
       unsetPeerAddr();
+      determineInitialChannelState();
       conn_state_ = RCConnectionState_t::CONNECTING;
     }
     return;
@@ -235,10 +252,13 @@ void ESP32_RC_ESPNOW::checkHeartbeat() {
 
   LOG_INFO("ESP-NOW link confirmation timed out, returning to discovery");
   unsetPeerAddr();
+  determineInitialChannelState();
   conn_state_ = RCConnectionState_t::CONNECTING;
 }
 
 void ESP32_RC_ESPNOW::sendSysMsg(const uint8_t msgType) {
+  refreshChannelStateFromWiFi();
+
   if (msgType != RCMSG_TYPE_HEARTBEAT) {
     ESP32RemoteControl::sendSysMsg(msgType);
     return;
@@ -405,6 +425,8 @@ void ESP32_RC_ESPNOW::unsetPeerAddr() {
 }
 
 void ESP32_RC_ESPNOW::handleHelloMessage(const uint8_t* mac, const RCMessage_t& msg) {
+  refreshChannelStateFromWiFi();
+
   if (!mac) {
     return;
   }
@@ -431,11 +453,11 @@ void ESP32_RC_ESPNOW::handleHelloMessage(const uint8_t* mac, const RCMessage_t& 
   bool impossible = false;
   const uint8_t agreed_channel = chooseNegotiatedChannel(hello, mac, impossible);
   if (impossible) {
-    negotiation_impossible_ = true;
-    conn_state_ = RCConnectionState_t::ERROR;
-    LOG_ERROR(
-        "ESP-NOW pairing impossible: both nodes are WiFi-locked on different channels "
-        "(mine=%u, peer=%u)",
+    negotiation_impossible_ = false;
+    conn_state_ = RCConnectionState_t::CONNECTING;
+    LOG_INFO(
+        "ESP-NOW cannot pair yet: both nodes are WiFi-locked on different channels "
+        "(mine=%u, peer=%u). Waiting for channel conditions to change.",
         current_channel_, hello.current_channel);
     return;
   }

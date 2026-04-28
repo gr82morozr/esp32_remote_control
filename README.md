@@ -136,6 +136,99 @@ behaves like a bridge and another behaves like a sensor, that difference is only
 in the application logic built on top of the same `connect()`, `sendData()`,
 and receive path.
 
+### ESP-NOW Channel Negotiation
+
+The current ESP-NOW transport does not use a fixed compile-time channel only.
+It performs a small `HELLO`-based negotiation implemented in
+`src/esp32_rc_espnow.cpp` and `include/esp32_rc_espnow.h`.
+
+Build-time entry points:
+
+- `ESP32_RC_ESPNOW::connect()` resets negotiation state and calls
+  `determineInitialChannelState()`.
+- `ESP32_RC_ESPNOW::init()` registers the ESP-NOW callbacks and also calls
+  `determineInitialChannelState()` during transport startup.
+
+Key state fields in `ESP32_RC_ESPNOW`:
+
+- `preferred_channel_`: preferred starting channel when Wi-Fi is not locking the radio
+- `current_channel_`: channel currently in use
+- `negotiated_channel_`: last agreed peer channel
+- `channel_locked_`: true when STA Wi-Fi is connected and the AP channel must be used
+- `pending_negotiation_channel_` and `pending_peer_mac_`: deferred negotiation target
+- `awaiting_link_confirmation_`: true after channel agreement, before the first real unicast packet confirms the link
+
+Negotiation packet:
+
+- `RCMSG_TYPE_HELLO` is built by `ESP32_RC_ESPNOW::makeHelloMessage()`
+- The payload type is `HelloPayload`
+- It carries:
+  - `version`
+  - `current_channel`
+  - `flags`
+  - `priority`
+  - `device_id`
+- `flags & kHelloFlagChannelLocked` indicates that the sender is locked to an active Wi-Fi AP channel
+
+Runtime flow:
+
+1. `ESP32_RC_ESPNOW::connect()` calls `determineInitialChannelState()`.
+If `WiFi.status() == WL_CONNECTED`, the node becomes AP-channel-locked and uses
+the live Wi-Fi channel. Otherwise it starts from `preferred_channel_` and can
+hop discovery channels.
+
+2. While disconnected, `ESP32_RC_ESPNOW::sendSysMsg()` sends `RCMSG_TYPE_HELLO`
+instead of normal heartbeats.
+`ESP32_RC_ESPNOW::lowLevelSend()` broadcasts that `HELLO` and
+`ESP32_RC_ESPNOW::advanceDiscoveryChannel()` hops to the next discovery channel
+after each discovery send when the node is not Wi-Fi locked.
+
+3. Incoming ESP-NOW frames arrive in `ESP32_RC_ESPNOW::onDataRecvStatic()`.
+If the frame type is `RCMSG_TYPE_HELLO`, it is routed to
+`ESP32_RC_ESPNOW::handleHelloMessage()`.
+
+4. `ESP32_RC_ESPNOW::handleHelloMessage()` parses `HelloPayload` and calls
+`ESP32_RC_ESPNOW::chooseNegotiatedChannel()`.
+That function applies the current rules:
+  - if both nodes are Wi-Fi locked to the same channel, use that channel
+  - if one node is Wi-Fi locked, use the locked channel
+  - if both nodes are Wi-Fi locked to different channels, pairing is impossible
+  - if neither node is locked, choose deterministically from the two candidate channels
+
+5. HELLO reception does not switch channels immediately inside the receive
+callback.
+Instead, `handleHelloMessage()` stores `pending_peer_mac_` and
+`pending_negotiation_channel_`, and
+`ESP32_RC_ESPNOW::processPendingNegotiation()` performs the real work later
+from `ESP32_RC_ESPNOW::lowLevelSend()`.
+This keeps channel switching and peer registration out of the ESP-NOW receive callback.
+
+6. `ESP32_RC_ESPNOW::completeNegotiationWithPeer()` finalizes the agreement:
+  - `applyChannel(agreed_channel)`
+  - `ensureBroadcastPeerRegistered()`
+  - `ensurePeerRegistered(peer_mac)`
+  - `setPeerAddr(peer_mac)`
+  - `conn_state_ = CONNECTING`
+  - `awaiting_link_confirmation_ = true`
+
+7. The first real unicast packet from the negotiated peer clears
+`awaiting_link_confirmation_` inside `ESP32_RC_ESPNOW::onDataRecvStatic()`.
+At that point the normal base-class receive path marks the peer as connected.
+
+8. Recovery is handled by `ESP32_RC_ESPNOW::checkHeartbeat()`.
+If a confirmed peer stops talking for `HEARTBEAT_TIMEOUT_MS`, or if link
+confirmation never arrives after negotiation, the transport clears the peer and
+returns to discovery automatically.
+
+Important implementation notes:
+
+- Negotiation is transport-internal; application code still uses the same
+  `connect()`, `sendData()`, `recvData()`, and `setOnReceiveMsgHandler()` API.
+- `esp_now_peer_info_t.channel` is registered as `0`, so unicast peers follow
+  the current Wi-Fi channel after negotiation.
+- The impossible case where both nodes are actively Wi-Fi locked to different
+  AP channels currently transitions the ESP-NOW transport to `ERROR`.
+
 ## Configuration
 
 All user-tunable settings live in `include/esp32_rc_user_config.h`:
@@ -238,6 +331,28 @@ The bridge example is intentionally application-asymmetric, but its ESP-NOW
 usage is still symmetric with the peer sketch: both sides create the same
 controller type, call `connect()`, register receive handling, and use
 `sendData()` for outbound payloads.
+
+Bridge output mode is compile-time selectable in
+[src/mcu_a_main.cpp](/d:/projects.git/esp32_remote_control/src/mcu_a_main.cpp:17):
+
+- `BRIDGE_OUTPUT_MODE_CSV_VERBOSE`: `id1=2,id2=180,...`
+- `BRIDGE_OUTPUT_MODE_CSV_COMPACT`: `2,180,0,0,232.24,...`
+- `BRIDGE_OUTPUT_MODE_BINARY`: framed binary output
+
+Exactly one of those macros must be enabled.
+
+Binary mode frame layout:
+
+```text
+0xAA 0x55 <type> <25-byte RCPayload_t> <checksum>
+```
+
+- `type = 0x01`: payload received from ESP-NOW and forwarded to the PC
+- `type = 0x02`: payload accepted from the PC side and echoed as sent
+- `checksum`: XOR of `type` and all 25 payload bytes
+
+The included Python bridge tools assume text output by default, so binary mode
+is intended for custom PC-side parsers.
 
 If the bridge is receiving telemetry packets with a sequence counter in `id2`,
 you can enable or disable gap reporting at compile time with
