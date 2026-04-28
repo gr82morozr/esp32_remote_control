@@ -277,7 +277,11 @@ RCConnectionState_t ESP32RemoteControl::getConnectionState() const {
  */
 void ESP32RemoteControl::onDataReceived(const RCMessage_t& msg) {
   LOG_DEBUG("Received message of type: %d", msg.type);
-  
+
+  // Treat every valid received frame as link activity, even if state-lock
+  // contention briefly prevents the connection bookkeeping below.
+  last_heartbeat_rx_ms_ = millis();
+
   // Update heartbeat timestamp for any received message (treat data messages as heartbeat responses)
   if (xSemaphoreTakeRecursive(data_lock_, pdMS_TO_TICKS(5)) == pdTRUE) {
     if (conn_state_ != RCConnectionState_t::CONNECTED) {
@@ -286,8 +290,6 @@ void ESP32RemoteControl::onDataReceived(const RCMessage_t& msg) {
       conn_state_ = RCConnectionState_t::CONNECTED;
       LOG("Peer set and connected!");
     } 
-    // Reset heartbeat timer for any received message
-    last_heartbeat_rx_ms_ = millis();
     xSemaphoreGiveRecursive(data_lock_);
   }
   

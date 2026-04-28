@@ -40,6 +40,8 @@ void ESP32_RC_ESPNOW::connect() {
 
 bool ESP32_RC_ESPNOW::init() {
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  esp_wifi_set_ps(WIFI_PS_NONE);
 
   esp_wifi_set_max_tx_power(ESPNOW_OUTPUT_POWER);
 
