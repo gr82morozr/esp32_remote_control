@@ -36,7 +36,6 @@ static constexpr uint8_t RX_QUEUE_DEPTH = 16;
 #error "Select exactly one bridge output mode"
 #endif
 
-static constexpr uint8_t PACKET_TYPE_TELEMETRY = 2;
 static constexpr uint8_t BRIDGE_BINARY_TYPE_RX = 1;
 static constexpr uint8_t BRIDGE_BINARY_TYPE_TX = 2;
 static constexpr uint8_t BRIDGE_BINARY_SYNC_0 = 0xAA;
@@ -46,13 +45,14 @@ ESP32RemoteControl* espnow_controller = nullptr;
 
 char serial_line[SERIAL_LINE_MAX] = {};
 size_t serial_line_len = 0;
+bool serial_line_discarding = false;
 
 struct PayloadRing {
   volatile uint8_t head = 0;
   volatile uint8_t tail = 0;
-  RCPayload_t payloads[RX_QUEUE_DEPTH] = {};
+  RCPayload_I16x8_Time_t payloads[RX_QUEUE_DEPTH] = {};
 
-  bool push(const RCPayload_t& payload) {
+  bool push(const RCPayload_I16x8_Time_t& payload) {
     const uint8_t next = (head + 1) % RX_QUEUE_DEPTH;
     if (next == tail) return false;
     payloads[head] = payload;
@@ -61,7 +61,7 @@ struct PayloadRing {
     return true;
   }
 
-  bool pop(RCPayload_t& payload) {
+  bool pop(RCPayload_I16x8_Time_t& payload) {
     if (tail == head) return false;
     __sync_synchronize();
     payload = payloads[tail];
@@ -74,8 +74,8 @@ PayloadRing rx_queue;
 volatile uint16_t rx_overflow_count = 0;
 #if BRIDGE_ENABLE_DROP_DETECT
 bool have_last_telemetry_seq = false;
-uint8_t last_telemetry_seq = 0;
-float last_telemetry_time = 0.0f;
+uint16_t last_telemetry_seq = 0;
+uint32_t last_telemetry_sample_us = 0;
 #endif
 
 bool parseUInt8Field(char* field, uint8_t& value) {
@@ -137,6 +137,8 @@ bool parsePayloadCsv(char* line, RCPayload_t& payload) {
   return field_count == 10;
 }
 
+void printBinaryPayload(const char* prefix, const void* payload_data, size_t payload_size);
+
 void printPayloadFields(const char* prefix, const RCPayload_t& payload) {
 #if BRIDGE_OUTPUT_MODE_CSV_VERBOSE
   if (prefix && prefix[0] != '\0') {
@@ -157,11 +159,16 @@ void printPayloadFields(const char* prefix, const RCPayload_t& payload) {
     payload.value1, payload.value2, payload.value3, payload.value4, payload.value5,
     payload.flags);
 #else
-  const uint8_t* payload_bytes = reinterpret_cast<const uint8_t*>(&payload);
+  printBinaryPayload(prefix, &payload, sizeof(payload));
+#endif
+}
+
+void printBinaryPayload(const char* prefix, const void* payload_data, size_t payload_size) {
+  const uint8_t* payload_bytes = static_cast<const uint8_t*>(payload_data);
   const uint8_t frame_type =
       (prefix && prefix[0] != '\0') ? BRIDGE_BINARY_TYPE_TX : BRIDGE_BINARY_TYPE_RX;
   uint8_t checksum = frame_type;
-  for (size_t i = 0; i < sizeof(payload); ++i) {
+  for (size_t i = 0; i < payload_size; ++i) {
     checksum ^= payload_bytes[i];
   }
 
@@ -171,48 +178,72 @@ void printPayloadFields(const char* prefix, const RCPayload_t& payload) {
     frame_type
   };
   Serial.write(header, sizeof(header));
-  Serial.write(payload_bytes, sizeof(payload));
+  Serial.write(payload_bytes, payload_size);
   Serial.write(&checksum, 1);
+}
+
+void printTelemetryPayloadFields(const char* prefix, const RCPayload_I16x8_Time_t& payload) {
+#if BRIDGE_OUTPUT_MODE_CSV_VERBOSE
+  if (prefix && prefix[0] != '\0') {
+    Serial.printf("%s:", prefix);
+  }
+  Serial.printf(
+    "seq=%u,sample_us=%lu,value0=%d,value1=%d,value2=%d,value3=%d,value4=%d,value5=%d,value6=%d,value7=%d,flags=%u,reserved1=%u,reserved2=%u\n",
+    payload.seq,
+    static_cast<unsigned long>(payload.sample_us),
+    payload.value[0], payload.value[1], payload.value[2], payload.value[3],
+    payload.value[4], payload.value[5], payload.value[6], payload.value[7],
+    payload.flags, payload.reserved1, payload.reserved2);
+#elif BRIDGE_OUTPUT_MODE_CSV_COMPACT
+  if (prefix && prefix[0] != '\0') {
+    Serial.printf("%s:", prefix);
+  }
+  Serial.printf(
+    "%u,%lu,%d,%d,%d,%d,%d,%d,%d,%d,%u,%u,%u\n",
+    payload.seq,
+    static_cast<unsigned long>(payload.sample_us),
+    payload.value[0], payload.value[1], payload.value[2], payload.value[3],
+    payload.value[4], payload.value[5], payload.value[6], payload.value[7],
+    payload.flags, payload.reserved1, payload.reserved2);
+#else
+  printBinaryPayload(prefix, &payload, sizeof(payload));
 #endif
 }
 
 #if BRIDGE_ENABLE_DROP_DETECT
-void reportTelemetryGap(const RCPayload_t& payload) {
-  if (payload.id1 != PACKET_TYPE_TELEMETRY) {
-    return;
-  }
-
-  if (have_last_telemetry_seq && payload.value1 + 0.5f < last_telemetry_time) {
+void reportTelemetryGap(const RCPayload_I16x8_Time_t& payload) {
+  if (have_last_telemetry_seq && payload.sample_us < last_telemetry_sample_us) {
     have_last_telemetry_seq = false;
   }
 
   if (have_last_telemetry_seq) {
-    const uint8_t expected_seq = static_cast<uint8_t>(last_telemetry_seq + 1);
-    if (payload.id2 != expected_seq) {
-      const uint8_t missing_count =
-          static_cast<uint8_t>(payload.id2 - expected_seq);
+    const uint16_t expected_seq = static_cast<uint16_t>(last_telemetry_seq + 1);
+    if (payload.seq != expected_seq) {
+      const uint16_t missing_count =
+          static_cast<uint16_t>(payload.seq - expected_seq);
       Serial.printf(
         "DROP_DETECTED:last_seq=%u,current_seq=%u,missing=%u\n",
-        last_telemetry_seq, payload.id2, missing_count);
+        last_telemetry_seq, payload.seq, missing_count);
     }
   }
 
   have_last_telemetry_seq = true;
-  last_telemetry_seq = payload.id2;
-  last_telemetry_time = payload.value1;
+  last_telemetry_seq = payload.seq;
+  last_telemetry_sample_us = payload.sample_us;
 }
 #endif
 
-void printReceivedPayload(const RCPayload_t& payload) {
+void printReceivedPayload(const RCPayload_I16x8_Time_t& payload) {
 #if BRIDGE_ENABLE_DROP_DETECT && !BRIDGE_OUTPUT_MODE_BINARY
   reportTelemetryGap(payload);
 #endif
-  printPayloadFields("", payload);
+  printTelemetryPayloadFields("", payload);
 }
 
 void onDataReceived(const RCMessage_t& msg) {
-  const RCPayload_t* payload = msg.getPayload();
-  if (!rx_queue.push(*payload)) {
+  RCPayload_I16x8_Time_t payload = {};
+  msg.copyPayloadTo(payload);
+  if (!rx_queue.push(payload)) {
     __atomic_add_fetch(&rx_overflow_count, 1, __ATOMIC_RELAXED);
   }
 }
@@ -241,6 +272,12 @@ void pollSerialInput() {
     }
 
     if (ch == '\n') {
+      if (serial_line_discarding) {
+        serial_line_discarding = false;
+        serial_line_len = 0;
+        continue;
+      }
+
       if (serial_line_len > 0) {
         serial_line[serial_line_len] = '\0';
         handleSerialLine(serial_line);
@@ -249,10 +286,15 @@ void pollSerialInput() {
       continue;
     }
 
+    if (serial_line_discarding) {
+      continue;
+    }
+
     if (serial_line_len < SERIAL_LINE_MAX - 1) {
       serial_line[serial_line_len++] = ch;
     } else {
       serial_line_len = 0;
+      serial_line_discarding = true;
       Serial.println("RC_ERROR:line_too_long");
     }
   }
@@ -264,7 +306,7 @@ void flushReceivedData() {
     Serial.printf("RC_ERROR:rx_overflow,%u\n", overflow_count);
   }
 
-  RCPayload_t payload = {};
+  RCPayload_I16x8_Time_t payload = {};
   while (rx_queue.pop(payload)) {
     printReceivedPayload(payload);
   }

@@ -1,6 +1,8 @@
 # ESP32 Serial-to-ESPNOW CSV Bridge
 
-A simple bridge that maps newline-terminated CSV serial packets to the `RCPayload_t` ESPNOW payload format.
+A simple bridge that maps newline-terminated CSV command packets to the legacy
+`RCPayload_t` ESPNOW payload format, and prints fixed-point telemetry packets
+from the dummy sensor as `RCPayload_I16x8_Time_t` fields.
 
 ## 📋 Overview
 
@@ -58,7 +60,7 @@ Send one newline-terminated CSV packet per message:
 - Invalid input returns `RC_ERROR:bad_csv`
 
 #### Receive Data (ESPNOW → Serial)  
-- Incoming ESPNOW packets are printed as `id1=<v>,id2=<v>,id3=<v>,id4=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,flags=<v>`
+- Incoming fixed-point telemetry packets are printed as `seq=<v>,sample_us=<v>,value0=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,value6=<v>,value7=<v>,flags=<v>,reserved1=<v>,reserved2=<v>`
 - Successfully submitted serial packets are echoed as `RC_SENT:id1=<v>,id2=<v>,id3=<v>,id4=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,flags=<v>`
 
 ## 📡 Data Format
@@ -79,6 +81,37 @@ struct RCPayload_t {
 };
 ```
 
+### RCPayload_I16x8_Time_t Telemetry Structure (25 bytes)
+```cpp
+struct RCPayload_I16x8_Time_t {
+  uint16_t seq;          // Bytes 0-1
+  uint32_t sample_us;    // Bytes 2-5
+  int16_t value[8];      // Bytes 6-21
+  uint8_t flags;         // Byte 22
+  uint8_t reserved1;     // Byte 23
+  uint8_t reserved2;     // Byte 24
+};
+```
+
+The included dummy sensor maps telemetry as:
+
+| Field | Scale | Description |
+|-------|-------|-------------|
+| `seq` | raw | 16-bit telemetry sequence counter |
+| `sample_us` | raw | remote ESP32 `micros()` timestamp |
+| `value[0]` | 0.01 C | temperature |
+| `value[1]` | 0.001 V | voltage |
+| `value[2]` | 0.01 | echoed command `value1` |
+| `value[3]` | 0.01 | echoed command `value2` |
+| `value[4]` | raw | echoed command `id1` |
+| `value[5]` | raw | echoed command `id2` |
+| `value[6]` | raw | echoed command `flags` |
+| `value[7]` | ms | telemetry interval |
+| `flags.0` | bit | set after any command is received |
+
+For binary parsing on a PC, decode telemetry with little-endian format
+`<HI8hBBB`.
+
 ### Example Data Mapping
 Sending 25 bytes: `01 02 03 04 42 28 00 00 42 F0 00 00 43 70 00 00 44 16 00 00 44 7A 00 00 FF`
 
@@ -92,39 +125,28 @@ Maps to:
 ### Python Serial Communication
 ```python
 import serial
-import struct
 
-# Connect to bridge
 bridge = serial.Serial('COM3', 230400)
 
-# Send structured data
 id1, id2, id3, id4 = 1, 2, 3, 4
 v1, v2, v3, v4, v5 = 42.0, 120.0, 240.0, 600.0, 1000.0
 flags = 255
 
-# Pack data according to RCPayload_t structure
-data = struct.pack('<BBBB5fB', id1, id2, id3, id4, v1, v2, v3, v4, v5, flags)
-bridge.write(data)
+# Send one legacy command payload as CSV text.
+line = f"{id1},{id2},{id3},{id4},{v1},{v2},{v3},{v4},{v5},{flags}\n"
+bridge.write(line.encode("ascii"))
 
-# Read response (if any)
-if bridge.in_waiting:
-    received = bridge.read(25)  # Read 25 bytes
-    unpacked = struct.unpack('<BBBB5fB', received)
-    print(f"Received: IDs={unpacked[:4]}, Values={unpacked[4:9]}, Flags={unpacked[9]}")
+# Read bridge echoes or fixed-point telemetry text.
+print(bridge.readline().decode("ascii", errors="replace").strip())
 ```
 
 ### Arduino (Another ESP32)
 ```cpp
-// Send data to bridge
-RCPayload_t payload = {1, 2, 3, 4, 42.0, 120.0, 240.0, 600.0, 1000.0, 255};
-Serial.write(reinterpret_cast<uint8_t*>(&payload), sizeof(payload));
+Serial.println("1,2,3,4,42.0,120.0,240.0,600.0,1000.0,255");
 
-// Receive data from bridge
-if (Serial.available() >= sizeof(RCPayload_t)) {
-    RCPayload_t received;
-    Serial.readBytes(reinterpret_cast<uint8_t*>(&received), sizeof(received));
-    // Process received data...
-}
+String line = Serial.readStringUntil('\n');
+// Example telemetry line:
+// seq=42,sample_us=12345678,value0=2501,value1=3300,...
 ```
 
 ## 🎮 Python Keyboard Client

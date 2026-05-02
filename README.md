@@ -7,8 +7,7 @@ peers at runtime, so there is no master/slave split to maintain.
 
 ## Highlights
 
-- Single 32-byte message with a shared 25-byte payload structure for every
-  protocol
+- Single 32-byte message with a shared 25-byte payload area for every protocol
 - Automatic discovery, handshake, and connection monitoring with 100 ms
   heartbeats and 1000 ms timeouts
 - Switch transports at compile time through one macro while keeping the same API
@@ -46,9 +45,27 @@ struct RCPayload_t {
 struct RCMessage_t {
   uint8_t type;                  // RCMSG_TYPE_DATA or RCMSG_TYPE_HEARTBEAT
   uint8_t from_addr[RC_ADDR_SIZE];
-  uint8_t payload[RC_PAYLOAD_MAX_SIZE];  // reinterpret_cast to RCPayload_t
+  uint8_t payload[RC_PAYLOAD_MAX_SIZE];  // 25-byte application payload
 };
 ```
+
+`RCPayload_t` remains the default high-level payload. The library also includes
+`RCPayload_I16x8_Time_t`, a 25-byte fixed-point telemetry layout:
+
+```cpp
+struct RCPayload_I16x8_Time_t {
+  uint16_t seq;
+  uint32_t sample_us;
+  int16_t value[8];
+  uint8_t flags;
+  uint8_t reserved1;
+  uint8_t reserved2;
+};
+```
+
+Both payload structs are exactly 25 bytes and use the same transport frame.
+Existing sketches using `RCPayload_t`, `sendData(RCPayload_t)`, and
+`recvData(RCPayload_t)` are source-compatible.
 
 ## Getting Started
 
@@ -241,8 +258,29 @@ All user-tunable settings live in `include/esp32_rc_user_config.h`:
 
 ### Custom Payloads
 
-The default payload is 25 bytes. If you need a different structure, redefine it
-before including any library headers:
+The default payload is 25 bytes. For telemetry that benefits from more channels
+and deterministic binary scaling, use the built-in fixed-point payload:
+
+```cpp
+RCPayload_I16x8_Time_t payload = {};
+payload.seq = seq++;
+payload.sample_us = micros();
+payload.value[0] = rcEncodeScaledFloat(ax_g, 0.001f);   // milli-g
+payload.value[1] = rcEncodeScaledFloat(gx_dps, 0.1f);   // 0.1 deg/s
+payload.value[2] = rcEncodeScaledFloat(temp_c, 0.01f);  // centi-C
+payload.flags = status_flags;
+controller->sendData(payload);
+```
+
+Decode with the matching scale:
+
+```cpp
+float ax_g = rcDecodeScaledInt16(payload.value[0], 0.001f);
+```
+
+If you need a different structure, keep it exactly 25 bytes and copy it through
+`RCMessage_t::payload`, or redefine `RCPayload_t` before including any library
+headers:
 
 ```cpp
 #ifndef RC_PAYLOAD_T_DEFINED
@@ -251,14 +289,14 @@ struct RCPayload_t {
   uint8_t command;
   float values[4];
   uint16_t crc;
+  uint8_t reserved[6];
 };
-#undef  RC_PAYLOAD_MAX_SIZE
-#define RC_PAYLOAD_MAX_SIZE sizeof(RCPayload_t)
 #endif
 ```
 
-Make sure the new size fits within the limits of your chosen transport.
-ESP-NOW supports larger packets, but NRF24 payloads are limited to 32 bytes.
+Make sure the custom payload remains exactly 25 bytes so `RCMessage_t` stays at
+32 bytes. NRF24 payloads are limited to 32 bytes, so the shared transport frame
+intentionally keeps the application payload fixed at 25 bytes.
 
 ### Fast Versus Reliable Mode
 
@@ -302,7 +340,13 @@ pio run -e <env> -t upload
 
 ## Serial CSV Bridge
 
-The serial bridge accepts one newline-terminated CSV packet per message:
+The serial bridge uses two payload schemas:
+
+- PC-to-ESP32 command input remains the legacy `RCPayload_t` CSV format.
+- ESP32-to-PC telemetry output uses `RCPayload_I16x8_Time_t` from the dummy
+  sensor sketches.
+
+The serial bridge accepts one newline-terminated command CSV packet per message:
 
 ```text
 id1,id2,id3,id4,value1,value2,value3,value4,value5,flags
@@ -315,10 +359,10 @@ Exactly 10 fields are required. ID and flag fields must be integer values from
 RC_ERROR:bad_csv
 ```
 
-Incoming ESP-NOW packets are printed as:
+Incoming ESP-NOW telemetry packets are printed as fixed-point fields:
 
 ```text
-id1=<v>,id2=<v>,id3=<v>,id4=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,flags=<v>
+seq=<v>,sample_us=<v>,value0=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,value6=<v>,value7=<v>,flags=<v>,reserved1=<v>,reserved2=<v>
 ```
 
 Successfully submitted serial packets are echoed as:
@@ -336,7 +380,7 @@ Bridge output mode is compile-time selectable in
 [src/mcu_a_main.cpp](/d:/projects.git/esp32_remote_control/src/mcu_a_main.cpp:17):
 
 - `BRIDGE_OUTPUT_MODE_CSV_VERBOSE`: `id1=2,id2=180,...`
-- `BRIDGE_OUTPUT_MODE_CSV_COMPACT`: `2,180,0,0,232.24,...`
+- `BRIDGE_OUTPUT_MODE_CSV_COMPACT`: `42,12345678,2501,3300,...`
 - `BRIDGE_OUTPUT_MODE_BINARY`: framed binary output
 
 Exactly one of those macros must be enabled.
@@ -344,7 +388,7 @@ Exactly one of those macros must be enabled.
 Binary mode frame layout:
 
 ```text
-0xAA 0x55 <type> <25-byte RCPayload_t> <checksum>
+0xAA 0x55 <type> <25-byte payload> <checksum>
 ```
 
 - `type = 0x01`: payload received from ESP-NOW and forwarded to the PC
@@ -354,8 +398,8 @@ Binary mode frame layout:
 The included Python bridge tools assume text output by default, so binary mode
 is intended for custom PC-side parsers.
 
-If the bridge is receiving telemetry packets with a sequence counter in `id2`,
-you can enable or disable gap reporting at compile time with
+For fixed-point telemetry, drop detection is based on the 16-bit `seq` field.
+You can enable or disable gap reporting at compile time with
 `BRIDGE_ENABLE_DROP_DETECT` in [src/mcu_a_main.cpp](/d:/projects.git/esp32_remote_control/src/mcu_a_main.cpp:12).
 
 ## PC Utilities

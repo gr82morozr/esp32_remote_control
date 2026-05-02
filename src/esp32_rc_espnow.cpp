@@ -88,8 +88,18 @@ bool ESP32_RC_ESPNOW::applyChannel(uint8_t channel) {
   }
 
   esp_wifi_set_promiscuous(true);
-  const esp_err_t result = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+  esp_err_t result = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
   esp_wifi_set_promiscuous(false);
+
+  if (result == ESP_FAIL && WiFi.status() != WL_CONNECTED) {
+    LOG_DEBUG("ESP-NOW channel switch failed while STA was not connected; disconnecting STA and retrying");
+    esp_wifi_disconnect();
+    DELAY(10);
+    esp_wifi_set_promiscuous(true);
+    result = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+    esp_wifi_set_promiscuous(false);
+  }
+
   if (result != ESP_OK) {
     LOG_ERROR("esp_wifi_set_channel(%u) failed: %s", channel, esp_err_to_name(result));
     return false;
@@ -116,7 +126,10 @@ void ESP32_RC_ESPNOW::determineInitialChannelState() {
   }
 
   if (!applyChannel(preferred_channel_)) {
-    current_channel_ = preferred_channel_;
+    const uint8_t live_channel = getCurrentChannel();
+    if (live_channel >= kMinEspnowChannel && live_channel <= kMaxEspnowChannel) {
+      current_channel_ = live_channel;
+    }
   }
   LOG_INFO("ESP-NOW discovery starts on channel %u", current_channel_);
 }
@@ -466,6 +479,25 @@ void ESP32_RC_ESPNOW::handleHelloMessage(const uint8_t* mac, const RCMessage_t& 
 
   if (agreed_channel < kMinEspnowChannel || agreed_channel > kMaxEspnowChannel) {
     LOG_DEBUG("HELLO from %s did not produce a usable channel", formatAddr(mac).c_str());
+    return;
+  }
+
+  if (awaiting_link_confirmation_ &&
+      memcmp(peer_addr_, mac, RC_ADDR_SIZE) == 0 &&
+      negotiated_channel_ == agreed_channel) {
+    awaiting_link_confirmation_ = false;
+    negotiation_started_ms_ = 0;
+    last_heartbeat_rx_ms_ = millis();
+    conn_state_ = RCConnectionState_t::CONNECTED;
+    LOG_INFO("ESP-NOW link confirmed by HELLO from %s on channel %u",
+             formatAddr(mac).c_str(), agreed_channel);
+    return;
+  }
+
+  if (conn_state_ == RCConnectionState_t::CONNECTED &&
+      memcmp(peer_addr_, mac, RC_ADDR_SIZE) == 0 &&
+      negotiated_channel_ == agreed_channel) {
+    last_heartbeat_rx_ms_ = millis();
     return;
   }
 

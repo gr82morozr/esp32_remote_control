@@ -667,6 +667,14 @@ bool ESP32RemoteControl::sendData(const RCPayload_t& payload) {
   return sendMsg(msg);
 }
 
+bool ESP32RemoteControl::sendData(const RCPayload_I16x8_Time_t& payload) {
+  RCMessage_t msg = {};
+  msg.type = RCMSG_TYPE_DATA;
+  memcpy(msg.from_addr, my_addr_, RC_ADDR_SIZE);
+  msg.setPayload(payload);
+  return sendMsg(msg);
+}
+
 /**
  * @brief Receive user data payload (simplified interface)
  * 
@@ -705,7 +713,22 @@ bool ESP32RemoteControl::recvData(RCPayload_t& payload) {
     return false;  // Not a data message
   }
   // Extract the payload from the message
-  memcpy(&payload, msg.getPayload(), sizeof(RCPayload_t));
+  msg.copyPayloadTo(payload);
+  return true;
+}
+
+bool ESP32RemoteControl::recvData(RCPayload_I16x8_Time_t& payload) {
+  RCMessage_t msg = {};
+
+  if (!recvMsg(msg)) {
+    return false;
+  }
+
+  if (msg.type != RCMSG_TYPE_DATA) {
+    return false;
+  }
+
+  msg.copyPayloadTo(payload);
   return true;
 }
 

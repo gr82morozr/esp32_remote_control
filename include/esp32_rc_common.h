@@ -9,6 +9,7 @@
  */
 
 #include <Arduino.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>  // For memcpy, strncpy
@@ -107,6 +108,41 @@ struct RCPayload_t {
 };
 #endif
 
+/**
+ * @brief Generic 25-byte fixed-point telemetry payload.
+ *
+ * This is an alternate view of the same 25-byte RCMessage_t::payload storage.
+ * It does not replace RCPayload_t; existing high-level code that uses
+ * RCPayload_t remains source-compatible.
+ */
+struct RCPayload_I16x8_Time_t {
+  uint16_t seq;
+  uint32_t sample_us;
+  int16_t value[8];
+  uint8_t flags;
+  uint8_t reserved1;
+  uint8_t reserved2;
+};
+
+inline int16_t rcEncodeScaledFloat(float value, float scale) {
+  if (scale <= 0.0f || !isfinite(value)) {
+    return 0;
+  }
+
+  const float raw = value / scale;
+  if (raw > 32767.0f) {
+    return 32767;
+  }
+  if (raw < -32768.0f) {
+    return -32768;
+  }
+  return static_cast<int16_t>(lroundf(raw));
+}
+
+inline float rcDecodeScaledInt16(int16_t value, float scale) {
+  return static_cast<float>(value) * scale;
+}
+
 
 
 /**
@@ -129,13 +165,33 @@ struct RCMessage_t {
                   "Payload size mismatch");
     memcpy(payload, &data, sizeof(RCPayload_t));
   }
+
+  void setPayload(const RCPayload_I16x8_Time_t &data) {
+    static_assert(sizeof(RCPayload_I16x8_Time_t) == RC_PAYLOAD_MAX_SIZE,
+                  "Payload size mismatch");
+    memcpy(payload, &data, sizeof(RCPayload_I16x8_Time_t));
+  }
+
+  void copyPayloadTo(RCPayload_t &data) const {
+    static_assert(sizeof(RCPayload_t) == RC_PAYLOAD_MAX_SIZE,
+                  "Payload size mismatch");
+    memcpy(&data, payload, sizeof(RCPayload_t));
+  }
+
+  void copyPayloadTo(RCPayload_I16x8_Time_t &data) const {
+    static_assert(sizeof(RCPayload_I16x8_Time_t) == RC_PAYLOAD_MAX_SIZE,
+                  "Payload size mismatch");
+    memcpy(&data, payload, sizeof(RCPayload_I16x8_Time_t));
+  }
 };
 
 #pragma pack(pop)
 // ==== End packed layout ====
 
 // Compile-time size check
-static_assert(sizeof(RCPayload_t) == RC_PAYLOAD_MAX_SIZE,   "RCPayload_t must be 21 bytes");
+static_assert(sizeof(RCPayload_t) == RC_PAYLOAD_MAX_SIZE,   "RCPayload_t must be 25 bytes");
+static_assert(sizeof(RCPayload_I16x8_Time_t) == RC_PAYLOAD_MAX_SIZE,
+              "RCPayload_I16x8_Time_t must be 25 bytes");
 static_assert(sizeof(RCMessage_t) == RC_MESSAGE_MAX_SIZE,   "RCMessage_t must be 32 bytes");
 
 // ========== Simplified Address Handling ==========

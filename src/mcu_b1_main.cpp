@@ -19,15 +19,14 @@ exercises the HELLO/channel-negotiation path against an unlocked peer.
 #endif
 #endif
 
-static constexpr uint32_t TELEMETRY_INTERVAL_MS = 11;
-static constexpr uint8_t PACKET_TYPE_TELEMETRY = 2;
+static constexpr uint32_t TELEMETRY_INTERVAL_MS = 10;
 
 ESP32RemoteControl* controller = nullptr;
 
 portMUX_TYPE command_lock = portMUX_INITIALIZER_UNLOCKED;
 bool command_received = false;
 RCPayload_t latest_command = {};
-RCPayload_t telemetry = {};
+RCPayload_I16x8_Time_t telemetry = {};
 
 uint32_t last_telemetry_ms = 0;
 uint32_t telemetry_counter = 0;
@@ -52,14 +51,21 @@ void connectWiFiForEspNowLock() {
       WiFi.localIP().toString().c_str());
   } else {
     Serial.printf("SENSOR_WIFI:failed,ssid=%s\n", RC_WIFI_SSID);
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(false, false);
+    delay(100);
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
+    Serial.println("SENSOR_WIFI:released_for_espnow_channel_hopping");
   }
 }
 
 void onCommandReceived(const RCMessage_t& msg) {
-  const RCPayload_t* payload = msg.getPayload();
+  RCPayload_t payload = {};
+  msg.copyPayloadTo(payload);
 
   portENTER_CRITICAL(&command_lock);
-  latest_command = *payload;
+  latest_command = payload;
   command_received = true;
   portEXIT_CRITICAL(&command_lock);
 
@@ -68,7 +74,7 @@ void onCommandReceived(const RCMessage_t& msg) {
 #endif
 }
 
-void populateTelemetry(RCPayload_t& payload) {
+void populateTelemetry(RCPayload_I16x8_Time_t& payload) {
   RCPayload_t command_snapshot = {};
   bool command_seen = false;
 
@@ -77,22 +83,23 @@ void populateTelemetry(RCPayload_t& payload) {
   command_seen = command_received;
   portEXIT_CRITICAL(&command_lock);
 
-  telemetry_counter++;
-
   const float time_sec = millis() / 1000.0f;
+  const float temperature_c = 20.0f + sin(time_sec) * 5.0f;
+  const float voltage_v = 3.3f + sin(time_sec * 0.5f) * 0.1f;
 
-  payload.id1 = PACKET_TYPE_TELEMETRY;
-  payload.id2 = telemetry_counter & 0xFF;
-  payload.id3 = command_snapshot.id1;
-  payload.id4 = command_snapshot.id2;
-
-  payload.value1 = time_sec;
-  payload.value2 = 20.0f + sin(time_sec) * 5.0f;
-  payload.value3 = 3.3f + sin(time_sec * 0.5f) * 0.1f;
-  payload.value4 = command_snapshot.value1;
-  payload.value5 = command_snapshot.value2;
-
+  payload.seq = static_cast<uint16_t>(++telemetry_counter);
+  payload.sample_us = micros();
+  payload.value[0] = rcEncodeScaledFloat(temperature_c, 0.01f);
+  payload.value[1] = rcEncodeScaledFloat(voltage_v, 0.001f);
+  payload.value[2] = rcEncodeScaledFloat(command_snapshot.value1, 0.01f);
+  payload.value[3] = rcEncodeScaledFloat(command_snapshot.value2, 0.01f);
+  payload.value[4] = command_snapshot.id1;
+  payload.value[5] = command_snapshot.id2;
+  payload.value[6] = command_snapshot.flags;
+  payload.value[7] = TELEMETRY_INTERVAL_MS;
   payload.flags = command_seen ? 0x01 : 0x00;
+  payload.reserved1 = 0;
+  payload.reserved2 = 0;
 }
 
 void setup() {
