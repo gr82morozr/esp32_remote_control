@@ -675,6 +675,53 @@ bool ESP32RemoteControl::sendData(const RCPayload_I16x8_Time_t& payload) {
   return sendMsg(msg);
 }
 
+bool ESP32RemoteControl::sendSchema(const char* schema, uint8_t schema_id) {
+  if (!schema) {
+    return false;
+  }
+
+  const size_t schema_len = strlen(schema);
+  const size_t chunk_text_size = sizeof(RCSchemaChunk_t::text);
+  const size_t chunk_count_size_t =
+      schema_len == 0 ? 1 : ((schema_len + chunk_text_size - 1) / chunk_text_size);
+
+  if (chunk_count_size_t > 255) {
+    LOG_ERROR("Schema is too large to send: %u chunks", static_cast<unsigned>(chunk_count_size_t));
+    return false;
+  }
+
+  const uint8_t chunk_count = static_cast<uint8_t>(chunk_count_size_t);
+  bool all_queued = true;
+
+  for (uint8_t index = 0; index < chunk_count; ++index) {
+    const size_t offset = static_cast<size_t>(index) * chunk_text_size;
+    const size_t remaining = schema_len > offset ? schema_len - offset : 0;
+    const size_t text_len = remaining < chunk_text_size ? remaining : chunk_text_size;
+
+    RCSchemaChunk_t chunk = {};
+    chunk.schema_id = schema_id;
+    chunk.chunk_index = index;
+    chunk.chunk_count = chunk_count;
+    chunk.text_len = static_cast<uint8_t>(text_len);
+    if (text_len > 0) {
+      memcpy(chunk.text, schema + offset, text_len);
+    }
+
+    RCMessage_t msg = {};
+    msg.type = RCMSG_TYPE_SCHEMA;
+    memcpy(msg.from_addr, my_addr_, RC_ADDR_SIZE);
+    msg.setPayload(chunk);
+
+    if (!sendMsg(msg)) {
+      all_queued = false;
+    }
+
+    DELAY(1);
+  }
+
+  return all_queued;
+}
+
 /**
  * @brief Receive user data payload (simplified interface)
  * 

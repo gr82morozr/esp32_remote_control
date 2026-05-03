@@ -22,7 +22,7 @@ fast_mode:
 - true: Messages sent immediately
 
 RCMessage_t structure:
-- type: Message type (RCMSG_TYPE_DATA or RCMSG_TYPE_HEARTBEAT)
+- type: Message type (RCMSG_TYPE_DATA, RCMSG_TYPE_HEARTBEAT, RCMSG_TYPE_SCHEMA, etc.)
 - from_addr: Sender MAC address
 - payload: RCPayload_t data (id1-id4, value1-value5, flags)
 */

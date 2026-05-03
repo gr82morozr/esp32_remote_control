@@ -61,11 +61,12 @@ Send one newline-terminated CSV packet per message:
 
 #### Receive Data (ESPNOW → Serial)  
 - Incoming fixed-point telemetry packets are printed as `seq=<v>,sample_us=<v>,value0=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,value6=<v>,value7=<v>,flags=<v>,reserved1=<v>,reserved2=<v>`
+- Text output modes forward sensor-owned `RC_SCHEMA:...` metadata after link connection and every 20 seconds, with field names, types, scales, and units for compact telemetry parsing.
 - Successfully submitted serial packets are echoed as `RC_SENT:id1=<v>,id2=<v>,id3=<v>,id4=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,flags=<v>`
 
 ## 📡 Data Format
 
-### RCPayload_t Structure (25 bytes)
+### Serial Command Input: `RCPayload_t` (25 bytes)
 ```cpp
 struct RCPayload_t {
   uint8_t id1;        // Byte 0
@@ -81,15 +82,15 @@ struct RCPayload_t {
 };
 ```
 
-### RCPayload_I16x8_Time_t Telemetry Structure (25 bytes)
+### ESP-NOW Telemetry Output: `RCPayload_I16x8_Time_t` (25 bytes)
 ```cpp
 struct RCPayload_I16x8_Time_t {
   uint16_t seq;          // Bytes 0-1
   uint32_t sample_us;    // Bytes 2-5
   int16_t value[8];      // Bytes 6-21
   uint8_t flags;         // Byte 22
-  uint8_t reserved1;     // Byte 23
-  uint8_t reserved2;     // Byte 24
+  uint8_t reserved1;     // Byte 23: schema ID
+  uint8_t reserved2;     // Byte 24: schema version
 };
 ```
 
@@ -108,17 +109,57 @@ The included dummy sensor maps telemetry as:
 | `value[6]` | raw | echoed command `flags` |
 | `value[7]` | ms | telemetry interval |
 | `flags.0` | bit | set after any command is received |
+| `reserved1` | raw | schema ID |
+| `reserved2` | raw | schema version |
+
+The dummy sensor sends schema metadata after the ESP-NOW link is connected and
+then every 20 seconds. Text output modes forward the reassembled schema as:
+
+```text
+RC_SCHEMA:n=i16x8t;f=seq:u16:1,s_us:u32:us,v0:i16:.01:temp,...
+```
+
+Schema metadata is owned by the sensor firmware and sent over ESP-NOW as
+`RCMSG_TYPE_SCHEMA` chunks. The bridge only reassembles and forwards it, so PC
+software can learn the compact telemetry field mapping without the bridge
+hardcoding those labels. Binary output mode suppresses `RC_SCHEMA:` text lines.
+
+Schema text format:
+
+```text
+n=<schema_name>;f=<field>,<field>,...
+```
+
+Each field is colon-separated:
+
+```text
+<wire_name>:<type>:<scale_or_unit>[:<label>]
+```
+
+Full dummy-sensor schema:
+
+```text
+n=i16x8t;f=seq:u16:1,s_us:u32:us,v0:i16:.01:temp,v1:i16:.001:volt,v2:i16:.01:cmd1,v3:i16:.01:cmd2,v4:i16:1:id1,v5:i16:1:id2,v6:i16:1:cflg,v7:i16:ms:dt,fl:u8:seen,r1:u8:sid,r2:u8:sver
+```
+
+Token meanings:
+
+- `n`: short schema name
+- `f`: comma-separated field list
+- `seq`, `s_us`, `v0`...`v7`, `fl`, `r1`, `r2`: compact wire field names
+- `u8`, `u16`, `u32`, `i16`: integer storage type
+- Numeric scale such as `.01`: multiply raw integer by that scale
+- Unit-only token such as `us` or `ms`: timestamp/interval unit
+- Final token such as `temp` or `sid`: display label or semantic name
 
 For binary parsing on a PC, decode telemetry with little-endian format
 `<HI8hBBB`.
 
-### Example Data Mapping
-Sending 25 bytes: `01 02 03 04 42 28 00 00 42 F0 00 00 43 70 00 00 44 16 00 00 44 7A 00 00 FF`
+### Example Telemetry Line
 
-Maps to:
-- id1=1, id2=2, id3=3, id4=4
-- value1=42.0, value2=120.0, value3=240.0, value4=600.0, value5=1000.0  
-- flags=255
+```text
+seq=42,sample_us=12345678,value0=2501,value1=3300,value2=1000,value3=-500,value4=1,value5=2,value6=255,value7=10,flags=1,reserved1=1,reserved2=1
+```
 
 ## 🔧 Integration Examples
 

@@ -74,7 +74,8 @@ enum : uint8_t {
   RCMSG_TYPE_DATA = 0,
   RCMSG_TYPE_HEARTBEAT = 3,
   RCMSG_TYPE_IP_DISCOVERY = 4,  // WiFi IP discovery broadcast
-  RCMSG_TYPE_HELLO = 5          // ESP-NOW discovery / channel negotiation
+  RCMSG_TYPE_HELLO = 5,         // ESP-NOW discovery / channel negotiation
+  RCMSG_TYPE_SCHEMA = 6         // Application schema metadata chunk
 };
 
 // ========== Struct Sizes ==========
@@ -122,6 +123,14 @@ struct RCPayload_I16x8_Time_t {
   uint8_t flags;
   uint8_t reserved1;
   uint8_t reserved2;
+};
+
+struct RCSchemaChunk_t {
+  uint8_t schema_id;
+  uint8_t chunk_index;
+  uint8_t chunk_count;
+  uint8_t text_len;
+  char text[21];
 };
 
 inline int16_t rcEncodeScaledFloat(float value, float scale) {
@@ -172,6 +181,12 @@ struct RCMessage_t {
     memcpy(payload, &data, sizeof(RCPayload_I16x8_Time_t));
   }
 
+  void setPayload(const RCSchemaChunk_t &data) {
+    static_assert(sizeof(RCSchemaChunk_t) == RC_PAYLOAD_MAX_SIZE,
+                  "Payload size mismatch");
+    memcpy(payload, &data, sizeof(RCSchemaChunk_t));
+  }
+
   void copyPayloadTo(RCPayload_t &data) const {
     static_assert(sizeof(RCPayload_t) == RC_PAYLOAD_MAX_SIZE,
                   "Payload size mismatch");
@@ -183,6 +198,12 @@ struct RCMessage_t {
                   "Payload size mismatch");
     memcpy(&data, payload, sizeof(RCPayload_I16x8_Time_t));
   }
+
+  void copyPayloadTo(RCSchemaChunk_t &data) const {
+    static_assert(sizeof(RCSchemaChunk_t) == RC_PAYLOAD_MAX_SIZE,
+                  "Payload size mismatch");
+    memcpy(&data, payload, sizeof(RCSchemaChunk_t));
+  }
 };
 
 #pragma pack(pop)
@@ -192,6 +213,8 @@ struct RCMessage_t {
 static_assert(sizeof(RCPayload_t) == RC_PAYLOAD_MAX_SIZE,   "RCPayload_t must be 25 bytes");
 static_assert(sizeof(RCPayload_I16x8_Time_t) == RC_PAYLOAD_MAX_SIZE,
               "RCPayload_I16x8_Time_t must be 25 bytes");
+static_assert(sizeof(RCSchemaChunk_t) == RC_PAYLOAD_MAX_SIZE,
+              "RCSchemaChunk_t must be 25 bytes");
 static_assert(sizeof(RCMessage_t) == RC_MESSAGE_MAX_SIZE,   "RCMessage_t must be 32 bytes");
 
 // ========== Simplified Address Handling ==========

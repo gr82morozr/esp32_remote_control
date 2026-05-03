@@ -606,7 +606,7 @@ void ESP32_RC_ESPNOW::onDataRecvStatic(const uint8_t* mac, const uint8_t* data, 
 
   const uint8_t msg_type = data[0];
   if (msg_type != RCMSG_TYPE_DATA && msg_type != RCMSG_TYPE_HEARTBEAT &&
-      msg_type != RCMSG_TYPE_HELLO) {
+      msg_type != RCMSG_TYPE_HELLO && msg_type != RCMSG_TYPE_SCHEMA) {
     LOG_ERROR("Invalid ESP-NOW message type: %u", msg_type);
     return;
   }
@@ -623,10 +623,10 @@ void ESP32_RC_ESPNOW::onDataRecvStatic(const uint8_t* mac, const uint8_t* data, 
       instance_->awaiting_link_confirmation_ &&
       memcmp(mac, instance_->peer_addr_, RC_ADDR_SIZE) == 0;
 
-  if (msg.type == RCMSG_TYPE_DATA &&
+  if ((msg.type == RCMSG_TYPE_DATA || msg.type == RCMSG_TYPE_SCHEMA) &&
       instance_->conn_state_ != RCConnectionState_t::CONNECTED &&
       !is_expected_pending_peer) {
-    LOG_DEBUG("Ignoring ESP-NOW data packet before HELLO negotiation completes");
+    LOG_DEBUG("Ignoring ESP-NOW application packet before HELLO negotiation completes");
     return;
   }
 
@@ -665,7 +665,7 @@ RCMessage_t ESP32_RC_ESPNOW::parseRawData(const uint8_t* data, size_t len) {
   memcpy(&msg, data, sizeof(RCMessage_t));
 
   if (msg.type != RCMSG_TYPE_DATA && msg.type != RCMSG_TYPE_HEARTBEAT &&
-      msg.type != RCMSG_TYPE_HELLO) {
+      msg.type != RCMSG_TYPE_HELLO && msg.type != RCMSG_TYPE_SCHEMA) {
     LOG_ERROR("Invalid message type: %u", msg.type);
     memset(&msg, 0, sizeof(RCMessage_t));
   }

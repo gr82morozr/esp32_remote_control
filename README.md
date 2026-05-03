@@ -43,7 +43,7 @@ struct RCPayload_t {
 };
 
 struct RCMessage_t {
-  uint8_t type;                  // RCMSG_TYPE_DATA or RCMSG_TYPE_HEARTBEAT
+  uint8_t type;                  // RCMSG_TYPE_DATA, HEARTBEAT, SCHEMA, etc.
   uint8_t from_addr[RC_ADDR_SIZE];
   uint8_t payload[RC_PAYLOAD_MAX_SIZE];  // 25-byte application payload
 };
@@ -63,8 +63,20 @@ struct RCPayload_I16x8_Time_t {
 };
 ```
 
-Both payload structs are exactly 25 bytes and use the same transport frame.
-Existing sketches using `RCPayload_t`, `sendData(RCPayload_t)`, and
+Schema metadata uses the same 25-byte payload area through `RCSchemaChunk_t`:
+
+```cpp
+struct RCSchemaChunk_t {
+  uint8_t schema_id;
+  uint8_t chunk_index;
+  uint8_t chunk_count;
+  uint8_t text_len;
+  char text[21];
+};
+```
+
+All three payload structs are exactly 25 bytes and use the same transport
+frame. Existing sketches using `RCPayload_t`, `sendData(RCPayload_t)`, and
 `recvData(RCPayload_t)` are source-compatible.
 
 ## Getting Started
@@ -278,6 +290,52 @@ Decode with the matching scale:
 float ax_g = rcDecodeScaledInt16(payload.value[0], 0.001f);
 ```
 
+If a receiver needs field names, units, and scales for compact telemetry, send
+schema text from the sensor side. The library chunks the string into
+`RCMSG_TYPE_SCHEMA` packets:
+
+```cpp
+static const char TELEMETRY_SCHEMA[] =
+  "n=i16x8t;f="
+  "seq:u16:1,"
+  "s_us:u32:us,"
+  "v0:i16:.001:accel_x";
+
+controller->sendSchema(TELEMETRY_SCHEMA, 1);
+```
+
+`sendSchema()` is transport-level metadata; application receive callbacks still
+see data packets normally. The serial bridge examples reassemble schema chunks
+and forward them to the PC as `RC_SCHEMA:<schema text>` in text output modes.
+
+Compact schema text uses this format:
+
+```text
+n=<schema_name>;f=<field>,<field>,...
+```
+
+Each field is colon-separated:
+
+```text
+<wire_name>:<type>:<scale_or_unit>[:<label>]
+```
+
+The included dummy sensor uses these tokens:
+
+```text
+n=i16x8t;f=seq:u16:1,s_us:u32:us,v0:i16:.01:temp,v1:i16:.001:volt,v2:i16:.01:cmd1,v3:i16:.01:cmd2,v4:i16:1:id1,v5:i16:1:id2,v6:i16:1:cflg,v7:i16:ms:dt,fl:u8:seen,r1:u8:sid,r2:u8:sver
+```
+
+Token meanings:
+
+- `n`: short schema name
+- `f`: comma-separated field list
+- `seq`, `s_us`, `v0`...`v7`, `fl`, `r1`, `r2`: compact wire field names
+- `u8`, `u16`, `u32`, `i16`: integer storage type
+- Numeric scale such as `.01`: multiply raw integer by that scale
+- Unit-only token such as `us` or `ms`: timestamp/interval unit
+- Final token such as `temp` or `sid`: display label or semantic name
+
 If you need a different structure, keep it exactly 25 bytes and copy it through
 `RCMessage_t::payload`, or redefine `RCPayload_t` before including any library
 headers:
@@ -363,6 +421,25 @@ Incoming ESP-NOW telemetry packets are printed as fixed-point fields:
 
 ```text
 seq=<v>,sample_us=<v>,value0=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,value6=<v>,value7=<v>,flags=<v>,reserved1=<v>,reserved2=<v>
+```
+
+The dummy sensor sends schema metadata after the ESP-NOW link is connected and
+then every 20 seconds. In text output modes, the bridge reassembles those schema
+chunks and forwards them to the PC:
+
+```text
+RC_SCHEMA:n=i16x8t;f=seq:u16:1,s_us:u32:us,v0:i16:.01:temp,...
+```
+
+Schema text is sensor-owned, so changing the sensor field mapping does not
+require hardcoding new field labels in the bridge. Schema lines are not emitted
+in binary mode. In the included dummy sensors, `reserved1` carries the schema
+ID and `reserved2` carries the schema version for the telemetry packet.
+
+Full dummy-sensor schema:
+
+```text
+n=i16x8t;f=seq:u16:1,s_us:u32:us,v0:i16:.01:temp,v1:i16:.001:volt,v2:i16:.01:cmd1,v3:i16:.01:cmd2,v4:i16:1:id1,v5:i16:1:id2,v6:i16:1:cflg,v7:i16:ms:dt,fl:u8:seen,r1:u8:sid,r2:u8:sver
 ```
 
 Successfully submitted serial packets are echoed as:

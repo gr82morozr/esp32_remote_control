@@ -175,6 +175,15 @@
 #define ESPNOW_OUTPUT_POWER   82    // ~20.5dBm
 #endif
 
+/**
+ * Schema metadata resend interval.
+ * Sensor examples periodically resend schema chunks so a newly connected
+ * bridge/UI can decode telemetry without requiring a device reboot.
+ */
+#ifndef RC_SCHEMA_INTERVAL_MS
+#define RC_SCHEMA_INTERVAL_MS  10000
+#endif
+
 // =======================================================
 // WIFI NETWORK SETTINGS
 // =======================================================
@@ -202,11 +211,11 @@
  * Note: Both devices must use the same SSID/password for peer-to-peer communication
  */
 #ifndef RC_WIFI_SSID
-#define RC_WIFI_SSID          "HOME-LAN"
+#define RC_WIFI_SSID          "lazydog"
 #endif
 
 #ifndef RC_WIFI_PASSWORD  
-#define RC_WIFI_PASSWORD      "l1sa72yf73"
+#define RC_WIFI_PASSWORD      "redblue123"
 #endif
 
 /**

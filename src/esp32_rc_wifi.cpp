@@ -515,7 +515,8 @@ RCMessage_t ESP32_RC_WIFI::parseRawData(const uint8_t* data, size_t len) {
         // Validate message type
         if (msg.type == RCMSG_TYPE_DATA || 
             msg.type == RCMSG_TYPE_HEARTBEAT || 
-            msg.type == RCMSG_TYPE_IP_DISCOVERY) {
+            msg.type == RCMSG_TYPE_IP_DISCOVERY ||
+            msg.type == RCMSG_TYPE_SCHEMA) {
             return msg;
         }
     }

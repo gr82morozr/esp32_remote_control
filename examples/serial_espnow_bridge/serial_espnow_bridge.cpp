@@ -40,6 +40,8 @@ static constexpr uint8_t BRIDGE_BINARY_TYPE_RX = 1;
 static constexpr uint8_t BRIDGE_BINARY_TYPE_TX = 2;
 static constexpr uint8_t BRIDGE_BINARY_SYNC_0 = 0xAA;
 static constexpr uint8_t BRIDGE_BINARY_SYNC_1 = 0x55;
+static constexpr uint8_t SCHEMA_QUEUE_DEPTH = 32;
+static constexpr size_t SCHEMA_BUFFER_MAX = 512;
 
 ESP32RemoteControl* espnow_controller = nullptr;
 
@@ -71,7 +73,37 @@ struct PayloadRing {
 };
 
 PayloadRing rx_queue;
+struct SchemaRing {
+  volatile uint8_t head = 0;
+  volatile uint8_t tail = 0;
+  RCSchemaChunk_t chunks[SCHEMA_QUEUE_DEPTH] = {};
+
+  bool push(const RCSchemaChunk_t& chunk) {
+    const uint8_t next = (head + 1) % SCHEMA_QUEUE_DEPTH;
+    if (next == tail) return false;
+    chunks[head] = chunk;
+    __sync_synchronize();
+    head = next;
+    return true;
+  }
+
+  bool pop(RCSchemaChunk_t& chunk) {
+    if (tail == head) return false;
+    __sync_synchronize();
+    chunk = chunks[tail];
+    tail = (tail + 1) % SCHEMA_QUEUE_DEPTH;
+    return true;
+  }
+};
+
+SchemaRing schema_queue;
 volatile uint16_t rx_overflow_count = 0;
+volatile uint16_t schema_overflow_count = 0;
+char schema_buffer[SCHEMA_BUFFER_MAX] = {};
+size_t schema_buffer_len = 0;
+uint8_t active_schema_id = 0;
+uint8_t expected_schema_chunk = 0;
+uint8_t expected_schema_chunks = 0;
 #if BRIDGE_ENABLE_DROP_DETECT
 bool have_last_telemetry_seq = false;
 uint16_t last_telemetry_seq = 0;
@@ -241,6 +273,15 @@ void printReceivedPayload(const RCPayload_I16x8_Time_t& payload) {
 }
 
 void onDataReceived(const RCMessage_t& msg) {
+  if (msg.type == RCMSG_TYPE_SCHEMA) {
+    RCSchemaChunk_t chunk = {};
+    msg.copyPayloadTo(chunk);
+    if (!schema_queue.push(chunk)) {
+      __atomic_add_fetch(&schema_overflow_count, 1, __ATOMIC_RELAXED);
+    }
+    return;
+  }
+
   RCPayload_I16x8_Time_t payload = {};
   msg.copyPayloadTo(payload);
   if (!rx_queue.push(payload)) {
@@ -304,6 +345,66 @@ void flushReceivedData() {
   uint16_t overflow_count = __atomic_exchange_n(&rx_overflow_count, 0, __ATOMIC_RELAXED);
   if (overflow_count > 0) {
     Serial.printf("RC_ERROR:rx_overflow,%u\n", overflow_count);
+  }
+
+  uint16_t schema_overflows = __atomic_exchange_n(&schema_overflow_count, 0, __ATOMIC_RELAXED);
+#if !BRIDGE_OUTPUT_MODE_BINARY
+  if (schema_overflows > 0) {
+    Serial.printf("RC_ERROR:schema_overflow,%u\n", schema_overflows);
+  }
+#else
+  (void)schema_overflows;
+#endif
+
+  RCSchemaChunk_t chunk = {};
+  while (schema_queue.pop(chunk)) {
+#if BRIDGE_OUTPUT_MODE_BINARY
+    continue;
+#else
+    if (chunk.chunk_count == 0 ||
+        chunk.chunk_index >= chunk.chunk_count ||
+        chunk.text_len > sizeof(chunk.text)) {
+      Serial.println("RC_ERROR:bad_schema_chunk");
+      active_schema_id = 0;
+      expected_schema_chunk = 0;
+      expected_schema_chunks = 0;
+      schema_buffer_len = 0;
+      continue;
+    }
+
+    if (chunk.chunk_index == 0) {
+      active_schema_id = chunk.schema_id;
+      expected_schema_chunk = 0;
+      expected_schema_chunks = chunk.chunk_count;
+      schema_buffer_len = 0;
+      schema_buffer[0] = '\0';
+    }
+
+    if (chunk.schema_id != active_schema_id ||
+        chunk.chunk_count != expected_schema_chunks ||
+        chunk.chunk_index != expected_schema_chunk ||
+        schema_buffer_len + chunk.text_len >= SCHEMA_BUFFER_MAX) {
+      Serial.println("RC_ERROR:schema_sequence");
+      active_schema_id = 0;
+      expected_schema_chunk = 0;
+      expected_schema_chunks = 0;
+      schema_buffer_len = 0;
+      continue;
+    }
+
+    memcpy(schema_buffer + schema_buffer_len, chunk.text, chunk.text_len);
+    schema_buffer_len += chunk.text_len;
+    schema_buffer[schema_buffer_len] = '\0';
+    expected_schema_chunk++;
+
+    if (expected_schema_chunk == expected_schema_chunks) {
+      Serial.printf("RC_SCHEMA:%s\n", schema_buffer);
+      active_schema_id = 0;
+      expected_schema_chunk = 0;
+      expected_schema_chunks = 0;
+      schema_buffer_len = 0;
+    }
+#endif
   }
 
   RCPayload_I16x8_Time_t payload = {};

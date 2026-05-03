@@ -18,7 +18,24 @@ back over ESP-NOW for verification from the PC serial UI/log.
 #endif
 #endif
 
-static constexpr uint32_t TELEMETRY_INTERVAL_MS = 10;
+static constexpr uint32_t TELEMETRY_INTERVAL_MS = 5;
+static constexpr uint32_t SCHEMA_INTERVAL_MS = RC_SCHEMA_INTERVAL_MS;
+static constexpr uint8_t TELEMETRY_SCHEMA_ID = 1;
+static constexpr uint8_t TELEMETRY_SCHEMA_VERSION = 1;
+static const char TELEMETRY_SCHEMA[] =
+  "n=i16x8t;f=seq:u16:1,"
+  "s_us:u32:us,"
+  "v0:i16:.01:temp,"
+  "v1:i16:.001:volt,"
+  "v2:i16:.01:cmd1,"
+  "v3:i16:.01:cmd2,"
+  "v4:i16:1:id1,"
+  "v5:i16:1:id2,"
+  "v6:i16:1:cflg,"
+  "v7:i16:ms:dt,"
+  "fl:u8:seen,"
+  "r1:u8:sid,"
+  "r2:u8:sver";
 
 ESP32RemoteControl* controller = nullptr;
 
@@ -28,6 +45,7 @@ RCPayload_t latest_command = {};
 RCPayload_I16x8_Time_t telemetry = {};
 
 uint32_t last_telemetry_ms = 0;
+uint32_t last_schema_ms = 0;
 uint32_t telemetry_counter = 0;
 
 void onCommandReceived(const RCMessage_t& msg) {
@@ -69,6 +87,8 @@ void populateTelemetry(RCPayload_I16x8_Time_t& payload) {
   // value[6]  = echoed command flags
   // value[7]  = telemetry interval in ms
   // flags.0   = 1 once any command has been received
+  // reserved1 = schema ID
+  // reserved2 = schema version
   payload.seq = static_cast<uint16_t>(++telemetry_counter);
   payload.sample_us = micros();
   payload.value[0] = rcEncodeScaledFloat(temperature_c, 0.01f);
@@ -80,8 +100,8 @@ void populateTelemetry(RCPayload_I16x8_Time_t& payload) {
   payload.value[6] = command_snapshot.flags;
   payload.value[7] = TELEMETRY_INTERVAL_MS;
   payload.flags = command_seen ? 0x01 : 0x00;
-  payload.reserved1 = 0;
-  payload.reserved2 = 0;
+  payload.reserved1 = TELEMETRY_SCHEMA_ID;
+  payload.reserved2 = TELEMETRY_SCHEMA_VERSION;
 }
 
 void printPlotterTelemetry(const RCPayload_I16x8_Time_t& payload) {
@@ -126,6 +146,13 @@ void loop() {
   }
 
   const uint32_t now = millis();
+
+  if (controller->getConnectionState() == RCConnectionState_t::CONNECTED &&
+      (last_schema_ms == 0 || now - last_schema_ms >= SCHEMA_INTERVAL_MS)) {
+    if (controller->sendSchema(TELEMETRY_SCHEMA, TELEMETRY_SCHEMA_ID)) {
+      last_schema_ms = now;
+    }
+  }
 
   if (now - last_telemetry_ms >= TELEMETRY_INTERVAL_MS) {
     last_telemetry_ms = now;

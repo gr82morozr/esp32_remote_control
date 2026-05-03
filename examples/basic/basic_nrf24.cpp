@@ -18,7 +18,7 @@ For example, to use NRF24, you would do:
   
   RCMessage_t has the following structure:
   struct RCMessage_t {  
-    uint8_t type;  // Message type (RCMSG_TYPE_DATA or RCMSG_TYPE_HEARTBEAT)
+    uint8_t type;  // Message type (DATA, HEARTBEAT, SCHEMA, etc.)
     uint8_t from_addr[RC_ADDR_SIZE];  // Sender address
     uint8_t to_addr[RC_ADDR_SIZE];    // Receiver address
     RCPayload_t payload;               // Payload data

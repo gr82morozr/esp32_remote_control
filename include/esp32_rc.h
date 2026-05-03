@@ -60,6 +60,7 @@ class ESP32RemoteControl {
   bool recvData(RCPayload_t& payload);        // Receive data payload
   bool sendData(const RCPayload_I16x8_Time_t& payload);  // Send fixed-point data payload
   bool recvData(RCPayload_I16x8_Time_t& payload);        // Receive fixed-point data payload
+  bool sendSchema(const char* schema, uint8_t schema_id = 1);
 
   // Connection state access - stable implementation
   RCConnectionState_t getConnectionState() const;

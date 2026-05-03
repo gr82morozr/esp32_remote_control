@@ -250,7 +250,8 @@ RCMessage_t ESP32_RC_NRF24::parseRawData(const uint8_t* data, size_t len) {
     memcpy(&msg, data, sizeof(RCMessage_t));
     
     // Validate message type
-    if (msg.type != RCMSG_TYPE_DATA && msg.type != RCMSG_TYPE_HEARTBEAT) {
+    if (msg.type != RCMSG_TYPE_DATA && msg.type != RCMSG_TYPE_HEARTBEAT &&
+        msg.type != RCMSG_TYPE_SCHEMA) {
         LOG_ERROR("Invalid message type: %d", msg.type);
         memset(&msg, 0, sizeof(RCMessage_t));
     }
@@ -349,6 +350,13 @@ void ESP32_RC_NRF24::receiveLoop(void* arg) {
                         onDataReceived(parsedMsg);
                     } else {
                         LOG_DEBUG("Data received before handshake complete, ignoring");
+                    }
+                    break;
+                case RCMSG_TYPE_SCHEMA:
+                    if (handshake_completed_) {
+                        onDataReceived(parsedMsg);
+                    } else {
+                        LOG_DEBUG("Schema received before handshake complete, ignoring");
                     }
                     break;
                     
