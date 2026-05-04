@@ -79,6 +79,11 @@ All three payload structs are exactly 25 bytes and use the same transport
 frame. Existing sketches using `RCPayload_t`, `sendData(RCPayload_t)`, and
 `recvData(RCPayload_t)` are source-compatible.
 
+External applications that need to parse schema metadata should use
+[doc/schema_metadata.md](doc/schema_metadata.md). It documents the
+`RCMSG_TYPE_SCHEMA` chunk wire layout, reassembly rules, compact schema text
+grammar, and the included dummy-sensor field mapping.
+
 ## Getting Started
 
 ### Requirements
@@ -424,7 +429,7 @@ seq=<v>,sample_us=<v>,value0=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,val
 ```
 
 The dummy sensor sends schema metadata after the ESP-NOW link is connected and
-then every 20 seconds. In text output modes, the bridge reassembles those schema
+then every `RC_SCHEMA_INTERVAL_MS` (10 seconds by default). In text output modes, the bridge reassembles those schema
 chunks and forwards them to the PC:
 
 ```text

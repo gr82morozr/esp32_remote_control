@@ -4,6 +4,12 @@
 #include <string.h>
 #include "esp32_rc_factory.h"
 
+#ifndef BUILTIN_LED
+#ifdef LED_BUILTIN
+#define BUILTIN_LED LED_BUILTIN
+#endif
+#endif
+
 /*
 ESP32 Serial-to-ESPNOW CSV Bridge
 
@@ -15,7 +21,7 @@ printed later from loop(), keeping callback work short and non-blocking.
 static constexpr size_t SERIAL_LINE_MAX = 128;
 static constexpr uint8_t RX_QUEUE_DEPTH = 64;
 #ifndef BRIDGE_ENABLE_DROP_DETECT
-#define BRIDGE_ENABLE_DROP_DETECT 1
+#define BRIDGE_ENABLE_DROP_DETECT 0
 #endif
 #ifndef BRIDGE_OUTPUT_MODE_CSV_VERBOSE
 #define BRIDGE_OUTPUT_MODE_CSV_VERBOSE 0
@@ -276,6 +282,13 @@ void onDataReceived(const RCMessage_t& msg) {
     return;
   }
 
+#ifdef BUILTIN_LED
+  if (espnow_controller &&
+      espnow_controller->getConnectionState() == RCConnectionState_t::CONNECTED) {
+    toggleGPIO(BUILTIN_LED);
+  }
+#endif
+
   RCPayload_I16x8_Time_t payload = {};
   msg.copyPayloadTo(payload);
   if (!rx_queue.push(payload)) {
@@ -412,6 +425,10 @@ void setup() {
   DELAY(1000);
 
   Serial.println("RC_STATUS:starting");
+
+#ifdef BUILTIN_LED
+  pinMode(BUILTIN_LED, OUTPUT);
+#endif
 
   espnow_controller = createProtocolInstance(RC_PROTO_ESPNOW, true);
 

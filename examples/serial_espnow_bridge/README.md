@@ -61,7 +61,7 @@ Send one newline-terminated CSV packet per message:
 
 #### Receive Data (ESPNOW → Serial)  
 - Incoming fixed-point telemetry packets are printed as `seq=<v>,sample_us=<v>,value0=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,value6=<v>,value7=<v>,flags=<v>,reserved1=<v>,reserved2=<v>`
-- Text output modes forward sensor-owned `RC_SCHEMA:...` metadata after link connection and every 20 seconds, with field names, types, scales, and units for compact telemetry parsing.
+- Text output modes forward sensor-owned `RC_SCHEMA:...` metadata after link connection and every `RC_SCHEMA_INTERVAL_MS` (10 seconds by default), with field names, types, scales, and units for compact telemetry parsing.
 - Successfully submitted serial packets are echoed as `RC_SENT:id1=<v>,id2=<v>,id3=<v>,id4=<v>,value1=<v>,value2=<v>,value3=<v>,value4=<v>,value5=<v>,flags=<v>`
 
 ## 📡 Data Format
@@ -113,7 +113,7 @@ The included dummy sensor maps telemetry as:
 | `reserved2` | raw | schema version |
 
 The dummy sensor sends schema metadata after the ESP-NOW link is connected and
-then every 20 seconds. Text output modes forward the reassembled schema as:
+then every `RC_SCHEMA_INTERVAL_MS` (10 seconds by default). Text output modes forward the reassembled schema as:
 
 ```text
 RC_SCHEMA:n=i16x8t;f=seq:u16:1,s_us:u32:us,v0:i16:.01:temp,...
@@ -154,6 +154,9 @@ Token meanings:
 
 For binary parsing on a PC, decode telemetry with little-endian format
 `<HI8hBBB`.
+
+For the full schema chunk wire format and parser rules for external apps, see
+[`doc/schema_metadata.md`](../../doc/schema_metadata.md).
 
 ### Example Telemetry Line
 
