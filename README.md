@@ -112,6 +112,53 @@ If your app needs custom pins or transport defaults, add an
 `include/esp32_rc_project_config.h` file in the consuming project. The library
 loads it automatically before applying its built-in defaults.
 
+### Sample Usage In This Repository
+
+The checked-in `platformio.ini` is currently set up for the ESP-NOW serial
+bridge workflow:
+
+- `comB`: flashes the USB serial bridge from
+  `examples/serial_espnow_bridge/bridge/src/main.cpp`
+- `comA_wifi`: flashes the Wi-Fi-locked dummy sensor from
+  `examples/dummy_sensor_collector_wifi_lock/src/main.cpp`
+- `src/main.cpp`: points at the ESP-NOW stress example in
+  `examples/stress_espnow/src/main.cpp`
+
+Typical local commands:
+
+```bash
+pio run -e comB -t upload
+pio device monitor -e comB
+```
+
+```bash
+pio run -e comA_wifi -t upload
+pio device monitor -e comA_wifi
+```
+
+For the two-device bridge demo:
+
+1. Flash `comB` to the bridge ESP32 connected to your PC.
+2. Flash `comA_wifi` to the peer ESP32 that publishes dummy telemetry.
+3. Open the bridge monitor at `230400` baud.
+4. Send one CSV command line such as:
+
+```text
+1,2,3,4,42.0,120.0,240.0,600.0,1000.0,255
+```
+
+5. Expect bridge output such as:
+
+```text
+RC_SENT:1,2,3,4,42.00,120.00,240.00,600.00,1000.00,255
+RC_SCHEMA:n=i16x8t;f=seq:u16:1,s_us:u32:us,v0:i16:.01:temp,...
+42,12345678,2501,3300,4200,12000,1,2,255,5,1,1,1
+```
+
+The first line is the command echo from the bridge. The `RC_SCHEMA:` line
+describes the fixed-point telemetry layout, and the compact CSV line is one
+telemetry packet forwarded back from the peer.
+
 ### Select A Protocol
 
 Choose the protocol before including `esp32_rc_factory.h`. Only the selected
@@ -161,6 +208,10 @@ void loop() {
   delay(500);
 }
 ```
+
+This same pattern is used by the examples: choose a protocol, create the
+controller with `createProtocolInstance(...)`, call `connect()`, and then use
+`sendData()` plus either `recvData()` or `setOnReceiveMsgHandler()`.
 
 ### Symmetric ESP-NOW Usage
 
@@ -411,8 +462,10 @@ Time(s) | Protocol | Conn | Send(OK/Fail/Rate/TPS) | Recv(OK/Fail/Rate/TPS) | To
 - `examples/basic/basic_wifi.cpp` - raw 802.11 discovery experiment
 - `examples/callback/basic_espnow_callback.cpp` - receive callbacks instead of polling
 - `examples/basic/remote_blinkled.cpp` - payload-driven LED control sketch
-- `examples/serial_espnow_bridge/serial_espnow_bridge.cpp` - USB-to-ESP-NOW CSV bridge built on the same symmetric API
-- `examples/serial_espnow_bridge/dummy_sensor_collector.cpp` - peer sketch that uses the same ESP-NOW lifecycle with different application behavior
+- `examples/serial_espnow_bridge/bridge/src/main.cpp` - USB-to-ESP-NOW CSV bridge used by the `comB` PlatformIO environment
+- `examples/dummy_sensor_collector/src/main.cpp` - peer sketch that echoes commands as fixed-point telemetry
+- `examples/dummy_sensor_collector_wifi_lock/src/main.cpp` - Wi-Fi-locked dummy sensor variant used by the `comA_wifi` PlatformIO environment
+- `examples/stress_espnow/src/main.cpp` - 5 ms ESP-NOW stress example currently selected by `src/main.cpp`
 - `examples/keyboard_remote_control/keyboard_receiver.cpp` - robot-style command consumer
 
 Each sketch is single-source and can be uploaded directly with PlatformIO:
