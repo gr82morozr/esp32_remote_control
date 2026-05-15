@@ -109,12 +109,19 @@ struct RCPayload_t {
 };
 #endif
 
+#ifndef RC_PAYLOAD_I16X8_TIME_T_DEFINED
+#define RC_PAYLOAD_I16X8_TIME_T_DEFINED
 /**
  * @brief Generic 25-byte fixed-point telemetry payload.
  *
  * This is an alternate view of the same 25-byte RCMessage_t::payload storage.
  * It does not replace RCPayload_t; existing high-level code that uses
  * RCPayload_t remains source-compatible.
+ *
+ * Downstream apps may override this type by defining
+ * `RC_PAYLOAD_I16X8_TIME_T_DEFINED` and declaring their own
+ * `RCPayload_I16x8_Time_t` before including library headers, typically from
+ * `esp32_rc_project_config.h`.
  */
 struct RCPayload_I16x8_Time_t {
   uint16_t seq;
@@ -124,6 +131,7 @@ struct RCPayload_I16x8_Time_t {
   uint8_t reserved1;
   uint8_t reserved2;
 };
+#endif
 
 struct RCSchemaChunk_t {
   uint8_t schema_id;

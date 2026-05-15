@@ -432,6 +432,29 @@ Make sure the custom payload remains exactly 25 bytes so `RCMessage_t` stays at
 32 bytes. NRF24 payloads are limited to 32 bytes, so the shared transport frame
 intentionally keeps the application payload fixed at 25 bytes.
 
+`RCPayload_I16x8_Time_t` can also be overridden the same way from the consuming
+app's `esp32_rc_project_config.h`. Define
+`RC_PAYLOAD_I16X8_TIME_T_DEFINED`, declare your replacement
+`RCPayload_I16x8_Time_t`, and keep it packed at exactly 25 bytes:
+
+```cpp
+#define RC_PAYLOAD_I16X8_TIME_T_DEFINED
+struct __attribute__((packed)) RCPayload_I16x8_Time_t {
+  uint16_t seq;
+  uint32_t timestamp_us;
+  int16_t channels[8];
+  uint8_t state;
+  uint8_t profile_id;
+  uint8_t profile_version;
+};
+
+static_assert(sizeof(RCPayload_I16x8_Time_t) == 25, "payload must stay 25 bytes");
+```
+
+That preserves the existing `sendData(RCPayload_I16x8_Time_t)` and
+`recvData(RCPayload_I16x8_Time_t)` API while letting each downstream app choose
+its own field layout.
+
 ### Fast Versus Reliable Mode
 
 - `fast_mode = false`: reliable mode with a background queue of 10 messages and
