@@ -93,7 +93,8 @@ grammar, and the included dummy-sensor field mapping.
   `lib_deps`
 - `nrf24/RF24` when compiling the nRF24L01+ protocol
 
-Add the library to your `platformio.ini`:
+For another app that wants to consume this library, add only this library to
+your `platformio.ini`:
 
 ```ini
 [env:esp32]
@@ -101,9 +102,15 @@ platform = espressif32
 board = esp32dev
 framework = arduino
 lib_deps =
-  https://github.com/gr82morozr/esp32-common.git
-  nrf24/RF24 @ ^1.4.11    ; required only for NRF24 builds
+  https://github.com/gr82morozr/esp32_remote_control.git
 ```
+
+`esp32-common`, `RF24`, and `ArduinoJson` are pulled transitively from this
+library's `library.json`.
+
+If your app needs custom pins or transport defaults, add an
+`include/esp32_rc_project_config.h` file in the consuming project. The library
+loads it automatically before applying its built-in defaults.
 
 ### Select A Protocol
 
@@ -134,7 +141,7 @@ void setup() {
   Serial.begin(115200);
   controller = createProtocolInstance(ESP32_RC_PROTOCOL, false); // false = reliable mode
   if (!controller) {
-    Serial.println("Protocol not enabled in esp32_rc_user_config.h");
+    Serial.println("Protocol is not available in this build");
     return;
   }
   controller->setOnReceiveMsgHandler(onMessage);
@@ -265,7 +272,20 @@ Important implementation notes:
 
 ## Configuration
 
-All user-tunable settings live in `include/esp32_rc_user_config.h`:
+The library defaults live in `include/esp32_rc_user_config.h`. Override them in
+your application with `build_flags` or a project-local
+`include/esp32_rc_project_config.h`:
+
+```cpp
+#pragma once
+
+#define ESP32_RC_PROTOCOL RC_PROTO_NRF24
+#define PIN_NRF_CE 4
+#define PIN_NRF_CSN 5
+#define NRF24_CHANNEL 90
+```
+
+Common override points:
 
 - Select the active protocol with `ESP32_RC_PROTOCOL`
 - Configure nRF24L01+ pins, SPI bus, RF channel, data rate, and power level
@@ -498,8 +518,8 @@ Install prerequisites with `pip install pyserial`. For the UI, install either
 
 ## Troubleshooting
 
-- Increase logging by setting `CURRENT_LOG_LEVEL` to `4` in
-  `esp32_rc_user_config.h`.
+- Increase logging by setting `CURRENT_LOG_LEVEL` to `4` in your app override
+  header or `build_flags`.
 - Verify heartbeats by watching the metrics banner. A missing heartbeat forces
   reconnection.
 - For nRF24 links, double-check CE/CSN wiring and confirm both nodes share the

@@ -1,14 +1,12 @@
 #include <Arduino.h>
+#include <WiFi.h>
 
 /*
-ESP32 Dummy Sensor Collector
+ESP32 Dummy Sensor Collector With Wi-Fi Lock
 
-Flash this sketch to the second ESP32. It receives command packets from the
-serial ESP-NOW bridge, keeps the latest command state, and sends dummy telemetry
-back over ESP-NOW for verification from the PC serial UI/log. The application
-role differs from the bridge, but the ESP-NOW lifecycle is still symmetric:
-create the same controller type, register receive handling, call connect(), and
-use sendData() for outbound payloads.
+This variant of the dummy sensor connects to a Wi-Fi AP before starting
+ESP-NOW. That forces the ESP-NOW transport to lock to the AP channel and
+exercises the HELLO/channel-negotiation path against an unlocked peer.
 */
 
 #define ESP32_RC_PROTOCOL RC_PROTO_ESPNOW
@@ -44,6 +42,35 @@ RCPayload_I16x8_Time_t telemetry = {};
 uint32_t last_telemetry_ms = 0;
 uint32_t last_schema_ms = 0;
 uint32_t telemetry_counter = 0;
+
+void connectWiFiForEspNowLock() {
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(RC_WIFI_SSID, RC_WIFI_PASSWORD);
+
+  const uint32_t start_ms = millis();
+  while (WiFi.status() != WL_CONNECTED &&
+         (millis() - start_ms) < RC_WIFI_TIMEOUT_MS) {
+    delay(100);
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("SENSOR_WIFI:connected,ssid=%s,channel=%u,ip=%s\n",
+      RC_WIFI_SSID,
+      WiFi.channel(),
+      WiFi.localIP().toString().c_str());
+  } else {
+    Serial.printf("SENSOR_WIFI:failed,ssid=%s\n", RC_WIFI_SSID);
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(false, false);
+    delay(100);
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
+    Serial.println("SENSOR_WIFI:released_for_espnow_channel_hopping");
+  }
+}
 
 void onCommandReceived(const RCMessage_t& msg) {
   RCPayload_t payload = {};
@@ -87,18 +114,6 @@ void populateTelemetry(RCPayload_I16x8_Time_t& payload) {
   payload.reserved2 = TELEMETRY_SCHEMA_VERSION;
 }
 
-void printTelemetryStatus(const RCPayload_I16x8_Time_t& payload) {
-  Serial.printf(
-    "seq:%u,sample_us:%lu,temp:%.2f,voltage:%.3f,cmd_value1:%.2f,cmd_value2:%.2f,command_seen:%u\n",
-    payload.seq,
-    static_cast<unsigned long>(payload.sample_us),
-    rcDecodeScaledInt16(payload.value[0], 0.01f),
-    rcDecodeScaledInt16(payload.value[1], 0.001f),
-    rcDecodeScaledInt16(payload.value[2], 0.01f),
-    rcDecodeScaledInt16(payload.value[3], 0.01f),
-    payload.flags & 0x01);
-}
-
 void setup() {
   Serial.begin(230400);
   delay(1000);
@@ -107,7 +122,9 @@ void setup() {
   pinMode(RC_LED_PIN, OUTPUT);
 #endif
 
-  Serial.println("SENSOR_STATUS:starting");
+  Serial.println("SENSOR_STATUS:starting_wifi_locked");
+
+  connectWiFiForEspNowLock();
 
   controller = createProtocolInstance(RC_PROTO_ESPNOW, false);
   if (!controller) {
@@ -142,9 +159,7 @@ void loop() {
 
     populateTelemetry(telemetry);
 
-    if (controller->sendData(telemetry)) {
-      printTelemetryStatus(telemetry);
-    } else {
+    if (!controller->sendData(telemetry)) {
       Serial.println("SENSOR_ERROR:send_failed");
     }
   }

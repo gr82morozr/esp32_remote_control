@@ -45,7 +45,9 @@ void setup() {
 
   controller = new ESP32_RC_PROTOCOL(true);  // Initialize inside setup
 
-  pinMode(BUILTIN_LED, OUTPUT);
+#if RC_LED_PIN >= 0
+  pinMode(RC_LED_PIN, OUTPUT);
+#endif
 
   LOG("ESP32_RC Example");
   DELAY(1000);
@@ -61,7 +63,9 @@ void setup() {
 void loop() {
   RCPayload_t incoming;
   if (controller->recvData(incoming)) {
-    writeGPIO(BUILTIN_LED, incoming.id1>0 ? HIGH : LOW);
+#if RC_LED_PIN >= 0
+    writeGPIO(RC_LED_PIN, incoming.id1 > 0 ? HIGH : LOW);
+#endif
     //LOG_ERROR("Received data: value1=%.6f",incoming.value1);
   }
   

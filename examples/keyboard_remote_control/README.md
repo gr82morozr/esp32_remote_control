@@ -27,7 +27,7 @@ This example shows how to create a keyboard-controlled remote system using three
 
 ### ESP32 Robot/Receiver Device  
 - ESP32 development board
-- Built-in LED or external LED on GPIO 2
+- Built-in LED or a user-configured `RC_LED_PIN`
 - Optional: NRF24L01+ module (if using NRF24 protocol)
 
 ## Software Requirements
@@ -184,7 +184,7 @@ python keyboard_controller.py --port COM3 --protocol nrf24
 
 ### No Wireless Communication
 - Confirm both ESP32s use the same protocol (ESP-NOW/NRF24)
-- Check protocol is enabled in `esp32_rc_user_config.h`
+- Check `ESP32_RC_PROTOCOL` in your app config or `build_flags`
 - Verify devices are within wireless range
 - For NRF24: Check SPI wiring and power supply
 
@@ -231,4 +231,4 @@ Use freely for educational and personal projects.
 
 - [PC Serial Bridge Example](../pc_serial_bridge/) - Generic wireless bridge
 - [ESP32 Remote Control Library](../../) - Main library documentation  
-- [Protocol Configuration](../../include/esp32_rc_user_config.h) - Hardware setup
+- [Protocol Defaults](../../include/esp32_rc_user_config.h) - Library defaults to override from your app

@@ -5,10 +5,7 @@ ESP32 Dummy Sensor Collector
 
 Flash this sketch to the second ESP32. It receives command packets from the
 serial ESP-NOW bridge, keeps the latest command state, and sends dummy telemetry
-back over ESP-NOW for verification from the PC serial UI/log. The application
-role differs from the bridge, but the ESP-NOW lifecycle is still symmetric:
-create the same controller type, register receive handling, call connect(), and
-use sendData() for outbound payloads.
+back over ESP-NOW for verification from the PC serial UI/log.
 */
 
 #define ESP32_RC_PROTOCOL RC_PROTO_ESPNOW
@@ -72,6 +69,20 @@ void populateTelemetry(RCPayload_I16x8_Time_t& payload) {
   const float temperature_c = 20.0f + sin(time_sec) * 5.0f;
   const float voltage_v = 3.3f + sin(time_sec * 0.5f) * 0.1f;
 
+  // Fixed-point telemetry mapping:
+  // seq       = 16-bit telemetry sequence counter
+  // sample_us = timestamp from this ESP32
+  // value[0]  = temperature, scale 0.01 C
+  // value[1]  = voltage, scale 0.001 V
+  // value[2]  = echoed command value1, scale 0.01
+  // value[3]  = echoed command value2, scale 0.01
+  // value[4]  = echoed command id1
+  // value[5]  = echoed command id2
+  // value[6]  = echoed command flags
+  // value[7]  = telemetry interval in ms
+  // flags.0   = 1 once any command has been received
+  // reserved1 = schema ID
+  // reserved2 = schema version
   payload.seq = static_cast<uint16_t>(++telemetry_counter);
   payload.sample_us = micros();
   payload.value[0] = rcEncodeScaledFloat(temperature_c, 0.01f);
@@ -87,7 +98,7 @@ void populateTelemetry(RCPayload_I16x8_Time_t& payload) {
   payload.reserved2 = TELEMETRY_SCHEMA_VERSION;
 }
 
-void printTelemetryStatus(const RCPayload_I16x8_Time_t& payload) {
+void printPlotterTelemetry(const RCPayload_I16x8_Time_t& payload) {
   Serial.printf(
     "seq:%u,sample_us:%lu,temp:%.2f,voltage:%.3f,cmd_value1:%.2f,cmd_value2:%.2f,command_seen:%u\n",
     payload.seq,
@@ -143,7 +154,7 @@ void loop() {
     populateTelemetry(telemetry);
 
     if (controller->sendData(telemetry)) {
-      printTelemetryStatus(telemetry);
+      //printPlotterTelemetry(telemetry);
     } else {
       Serial.println("SENSOR_ERROR:send_failed");
     }

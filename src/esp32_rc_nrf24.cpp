@@ -52,7 +52,7 @@ ESP32_RC_NRF24::ESP32_RC_NRF24(bool fast_mode)
       this, 
       2, 
       &receiveTaskHandle_, 
-      0
+      RC_NRF24_RECV_TASK_CORE
     );
     
     if (receiveTaskHandle_ == nullptr) {

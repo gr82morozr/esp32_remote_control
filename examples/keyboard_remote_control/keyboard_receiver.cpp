@@ -19,7 +19,7 @@ Features:
 
 Hardware Required:
 - ESP32 development board
-- Built-in LED (or external LED on GPIO 2)
+- Built-in LED or a user-configured LED pin
 - Optional: NRF24L01+ module for NRF24 testing
 
 Usage:
@@ -46,7 +46,7 @@ Command Interpretation:
 #define RECEIVER_PROTOCOL RC_PROTO_ESPNOW    // or RC_PROTO_NRF24
 
 // LED configuration for command feedback
-#define LED_PIN BUILTIN_LED               // Use built-in LED
+#define LED_PIN RC_LED_PIN                // Use shared example LED override
 #define LED_ACTIVE_LOW true               // Most ESP32 boards have active-low LED
 
 // Debug output control
@@ -99,6 +99,10 @@ void printConnectionStats();
 // =============================================================================
 
 void setLED(bool state) {
+    if (LED_PIN < 0) {
+        return;
+    }
+
     if (LED_ACTIVE_LOW) {
         digitalWrite(LED_PIN, !state);  // Invert for active-low LED
     } else {
@@ -238,18 +242,24 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
     
-    // Initialize LED pin
+    // Initialize LED pin when enabled.
+#if LED_PIN >= 0
     pinMode(LED_PIN, OUTPUT);
     setLED(false);  // Start with LED off
+#endif
     
     // Startup banner
     Serial.println("ESP32 Keyboard Remote Control Receiver");
-    Serial.printf("Protocol: %s | LED: GPIO%d\n", protocolToString(RECEIVER_PROTOCOL), LED_PIN);
+    if (LED_PIN >= 0) {
+        Serial.printf("Protocol: %s | LED: GPIO%d\n", protocolToString(RECEIVER_PROTOCOL), LED_PIN);
+    } else {
+        Serial.printf("Protocol: %s | LED: disabled\n", protocolToString(RECEIVER_PROTOCOL));
+    }
     
     // Check if selected protocol is available at compile time
     if (!isProtocolAvailable(RECEIVER_PROTOCOL)) {
         Serial.printf("[ERROR] Protocol %s not available (not compiled in)\n", protocolToString(RECEIVER_PROTOCOL));
-        Serial.println("Check ENABLE_ESP32_RC_* macros in esp32_rc_user_config.h");
+        Serial.println("Check ESP32_RC_PROTOCOL in your project config or build_flags");
         while(1) delay(1000);  // Halt
     }
     

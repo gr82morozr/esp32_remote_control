@@ -87,7 +87,7 @@ ESP32RemoteControl::ESP32RemoteControl(bool fast_mode) : fast_mode_(fast_mode) {
       this,  // Pass the instance
       3, 
       &sendFromQueueTaskHandle_, 
-      APP_CPU_NUM
+      RC_SEND_TASK_CORE
   );
 
   LOG("SendFromQueueTask created.");
@@ -317,7 +317,6 @@ void ESP32RemoteControl::onDataReceived(const RCMessage_t& msg) {
 
         if (ok != pdTRUE) {
           LOG_ERROR("Failed to enqueue message");
-          recv_metrics_.addFailure();
         }
       }
 

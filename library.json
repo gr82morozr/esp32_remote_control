@@ -47,7 +47,13 @@
     }
   ],
   "build": {
-    "libLDFMode": "deep+"
+    "libLDFMode": "deep+",
+    "srcFilter": [
+      "+<esp32_rc.cpp>",
+      "+<esp32_rc_espnow.cpp>",
+      "+<esp32_rc_nrf24.cpp>",
+      "+<esp32_rc_wifi.cpp>"
+    ]
   },
   "export": {
     "include": [
@@ -56,22 +62,8 @@
     "exclude": [
       "examples/*",
       "test/*", 
-      "docs/*",
+      "doc/*",
       "*.md"
     ]
-  },
-  "examples": [
-    {
-      "name": "Basic ESP-NOW",
-      "base": "examples/basic_espnow.cpp"
-    },
-    {
-      "name": "Basic nRF24L01+",
-      "base": "examples/basic_nrf24.cpp"
-    },
-    {
-      "name": "PC Serial Bridge - USB to Wireless",
-      "base": "examples/pc_serial_bridge/pc_serial_bridge.cpp"
-    }
-  ]
+  }
 }

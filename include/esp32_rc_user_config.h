@@ -2,11 +2,24 @@
 /*
  * ESP32 Remote Control - User Configuration
  * 
- * This file contains all user-configurable settings for the ESP32 Remote Control library.
- * Users should modify these settings to match their hardware setup and preferences.
+ * This file contains the library defaults for all user-configurable settings.
+ * Downstream applications should NOT edit this file inside the library.
+ *
+ * Override settings in one of these ways:
+ * 1. Add `-DMACRO=value` in the consuming app's `build_flags`
+ * 2. Create a project-local `include/esp32_rc_project_config.h`
+ * 3. Define `ESP32_RC_PROJECT_CONFIG_HEADER` to a quoted header path
  * 
  * For internal framework settings (timeouts, buffer sizes, etc.), see esp32_rc_common.h
  */
+
+#if defined(ESP32_RC_PROJECT_CONFIG_HEADER)
+#include ESP32_RC_PROJECT_CONFIG_HEADER
+#elif defined(__has_include)
+#if __has_include("esp32_rc_project_config.h")
+#include "esp32_rc_project_config.h"
+#endif
+#endif
 
 // =======================================================
 // UNIFIED PROTOCOL SELECTION
@@ -66,6 +79,16 @@
 // PHYSICAL PIN ASSIGNMENTS
 // =======================================================
 
+// Optional status LED pin used by examples.
+// Set to -1 to disable LED handling in example sketches.
+#ifndef RC_LED_PIN
+  #ifdef LED_BUILTIN
+    #define RC_LED_PIN LED_BUILTIN
+  #else
+    #define RC_LED_PIN (-1)
+  #endif
+#endif
+
 // --- NRF24L01+ SPI Pins ---
 /**
  * SPI Bus Selection: HSPI or VSPI
@@ -93,6 +116,21 @@
 #endif
 #ifndef PIN_NRF_MOSI
 #define PIN_NRF_MOSI          23    // SPI Master Out Slave In
+#endif
+
+// =======================================================
+// TASK / CORE CONFIGURATION
+// =======================================================
+
+// FreeRTOS core affinity for the shared send task.
+// Use tskNO_AFFINITY to let the scheduler decide.
+#ifndef RC_SEND_TASK_CORE
+#define RC_SEND_TASK_CORE     APP_CPU_NUM
+#endif
+
+// FreeRTOS core affinity for the NRF24 receive task.
+#ifndef RC_NRF24_RECV_TASK_CORE
+#define RC_NRF24_RECV_TASK_CORE 0
 #endif
 
 // --- Future Protocol Pins (for expansion) ---
@@ -247,6 +285,22 @@
  */
 #ifndef RC_WIFI_TIMEOUT_MS
 #define RC_WIFI_TIMEOUT_MS    10000
+#endif
+
+/**
+ * WiFi raw discovery channel.
+ * Both peers must sniff/inject on the same channel.
+ */
+#ifndef RC_WIFI_DISCOVERY_CHANNEL
+#define RC_WIFI_DISCOVERY_CHANNEL 6
+#endif
+
+/**
+ * WiFi re-handshake silence timeout (ms).
+ * When a peer stays silent longer than this, discovery restarts.
+ */
+#ifndef RC_WIFI_PEER_SILENCE_TIMEOUT_MS
+#define RC_WIFI_PEER_SILENCE_TIMEOUT_MS 10000
 #endif
 
 /**

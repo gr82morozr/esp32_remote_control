@@ -10,16 +10,23 @@
 // Based on Build Details: Ultra-fast discovery using custom 802.11 frames
 
 // Custom vendor OUI for RC discovery frames
+#ifndef RC_VENDOR_OUI_0
 #define RC_VENDOR_OUI_0    0x12
-#define RC_VENDOR_OUI_1    0x34  
+#endif
+#ifndef RC_VENDOR_OUI_1
+#define RC_VENDOR_OUI_1    0x34
+#endif
+#ifndef RC_VENDOR_OUI_2
 #define RC_VENDOR_OUI_2    0x56
-
-// Discovery channel (fixed channel 6 as per spec)
-#define RC_DISCOVERY_CHANNEL    6
+#endif
 
 // Discovery frame types
+#ifndef RC_FRAME_TYPE_DISCOVERY
 #define RC_FRAME_TYPE_DISCOVERY    0x01
+#endif
+#ifndef RC_FRAME_TYPE_RESPONSE
 #define RC_FRAME_TYPE_RESPONSE     0x02
+#endif
 
 // Custom 802.11 probe request frame structure for discovery
 struct __attribute__((packed)) RCDiscoveryFrame_t {
@@ -75,7 +82,7 @@ private:
     
     // Communication
     WiFiUDP udp_;
-    uint16_t udp_port_ = 12345;
+    uint16_t udp_port_ = RC_WIFI_PORT;
     
     // Raw 802.11 discovery state
     bool peer_discovered_ = false;
@@ -86,7 +93,7 @@ private:
     // Step 3: Continuous handshake monitoring state
     bool continuous_listening_active_ = false;
     uint32_t last_peer_discovery_ms_ = 0;
-    uint32_t peer_silence_timeout_ms_ = 10000;  // 10 seconds silence = potential reboot
+    uint32_t peer_silence_timeout_ms_ = RC_WIFI_PEER_SILENCE_TIMEOUT_MS;
     
     // Discovery phases
     enum DiscoveryPhase {

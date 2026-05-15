@@ -109,7 +109,7 @@ void ESP32_RC_WIFI::connect() {
 // ========== Raw 802.11 Frame Discovery Implementation ==========
 
 void ESP32_RC_WIFI::startRawDiscovery() {
-    LOG("[STEP1] Starting raw 802.11 frame discovery on channel %d", RC_DISCOVERY_CHANNEL);
+    LOG("[STEP1] Starting raw 802.11 frame discovery on channel %d", RC_WIFI_DISCOVERY_CHANNEL);
     
     discovery_start_ms_ = millis();
     last_frame_inject_ms_ = 0;
@@ -224,14 +224,14 @@ void ESP32_RC_WIFI::scanForPeerAPs() {
 }
 
 void ESP32_RC_WIFI::setupSniffMode() {
-    LOG("[STEP1] Setting up sniff mode on channel %d", RC_DISCOVERY_CHANNEL);
+    LOG("[STEP1] Setting up sniff mode on channel %d", RC_WIFI_DISCOVERY_CHANNEL);
     
     // Initialize WiFi in STA mode first
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
     
     // Set fixed channel for discovery
-    esp_wifi_set_channel(RC_DISCOVERY_CHANNEL, WIFI_SECOND_CHAN_NONE);
+    esp_wifi_set_channel(RC_WIFI_DISCOVERY_CHANNEL, WIFI_SECOND_CHAN_NONE);
     
     // Enable sniff mode with callback
     esp_wifi_set_promiscuous(true);
@@ -355,7 +355,7 @@ bool ESP32_RC_WIFI::becomeAccessPoint() {
     LOG("[STEP1] Creating AP: %s", ssid.c_str());
     
     WiFi.mode(WIFI_AP);
-    bool success = WiFi.softAP(ssid.c_str(), password.c_str(), RC_DISCOVERY_CHANNEL);
+    bool success = WiFi.softAP(ssid.c_str(), password.c_str(), RC_WIFI_DISCOVERY_CHANNEL);
     
     if (success) {
         my_ip_ = WiFi.softAPIP();

@@ -47,7 +47,10 @@ unsigned long last_message_time = 0;
  * @param msg The received message containing type, from_addr, and payload
  */
 void onMessageReceived(const RCMessage_t& msg) {
-    toggleGPIO(BUILTIN_LED);
+    (void)msg;
+#if RC_LED_PIN >= 0
+    toggleGPIO(RC_LED_PIN);
+#endif
 }
 
 /**
@@ -114,7 +117,7 @@ void setup() {
     // Check if protocol is available at compile time
     if (!isProtocolAvailable(ESP32_RC_PROTOCOL)) {
         LOG_ERROR("Protocol %s not available (not compiled in)", protocolToString(ESP32_RC_PROTOCOL));
-        LOG_ERROR("Check ESP32_RC_PROTOCOL macro in esp32_rc_user_config.h");
+        LOG_ERROR("Check ESP32_RC_PROTOCOL in your project config or build_flags");
         SYS_HALT;
     }
     
@@ -125,7 +128,9 @@ void setup() {
         SYS_HALT;
     }
     
-    pinMode(BUILTIN_LED, OUTPUT);
+#if RC_LED_PIN >= 0
+    pinMode(RC_LED_PIN, OUTPUT);
+#endif
     LOG("ESP32_RC Callback Example");
     DELAY(1000);
     LOG("Starting ESP32_RC callback demo - Protocol: %s", protocolToString(controller->getProtocol()));

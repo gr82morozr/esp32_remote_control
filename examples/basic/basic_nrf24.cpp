@@ -83,7 +83,7 @@ void setup() {
   // Check if protocol is available at compile time
   if (!isProtocolAvailable(ESP32_RC_PROTOCOL)) {
     LOG_ERROR("Protocol %s not available (not compiled in)", protocolToString(ESP32_RC_PROTOCOL));
-    LOG_ERROR("Check ESP32_RC_PROTOCOL macro in esp32_rc_user_config.h");
+    LOG_ERROR("Check ESP32_RC_PROTOCOL in your project config or build_flags");
     SYS_HALT;
   }
   
@@ -94,7 +94,9 @@ void setup() {
     SYS_HALT;
   }
   
-  pinMode(BUILTIN_LED, OUTPUT);
+#if RC_LED_PIN >= 0
+  pinMode(RC_LED_PIN, OUTPUT);
+#endif
   LOG("ESP32_RC Example");
   DELAY(1000);
   LOG("Starting ESP32_RC demo - Protocol: %s ", protocolToString(controller->getProtocol()));
@@ -120,7 +122,9 @@ void loop() {
   if (controller->recvData(incoming)) {
     // Data received successfully - metrics automatically tracked
     // Optional: Toggle LED or other indicator
-    toggleGPIO(BUILTIN_LED);
+#if RC_LED_PIN >= 0
+    toggleGPIO(RC_LED_PIN);
+#endif
   }
   
   // Print metrics automatically every second (handled by base class)
